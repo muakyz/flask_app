@@ -292,6 +292,45 @@ def add_seller_id_to_tracking(current_user_id):
         return jsonify({'message': 'Veri ekleme sırasında bir hata oluştu'}), 500
 
 
+@app.route('/delete_seller_id_from_tracking', methods=['DELETE'])
+@token_required
+def delete_seller_id_from_tracking(current_user_id):
+    data = request.get_json()
+    seller_ids = data.get('seller_id')
+
+    if not seller_ids or not isinstance(seller_ids, list):
+        return jsonify({'message': 'Seller ID listesi gerekli ve liste formatında olmalı'}), 400
+
+    try:
+        cursor = conn.cursor()
+
+        for seller_id in seller_ids:
+            # İlk olarak Userid_Sellerid tablosundan silme işlemi
+            delete_query_userid_sellerid = """
+                DELETE FROM Userid_Sellerid 
+                WHERE user_id = ? AND seller_id = ?
+            """
+            cursor.execute(delete_query_userid_sellerid, (current_user_id, seller_id))
+
+            # Sellerid başka bir kullanıcı tarafından eklenmemişse Sellerids tablosundan silme
+            check_seller_in_userid_sellerid = """
+                SELECT 1 FROM Userid_Sellerid WHERE seller_id = ?
+            """
+            cursor.execute(check_seller_in_userid_sellerid, (seller_id,))
+            result = cursor.fetchone()
+
+            if not result:
+                delete_query_sellerids = """
+                    DELETE FROM Sellerids WHERE seller_id = ?
+                """
+                cursor.execute(delete_query_sellerids, (seller_id,))
+
+        conn.commit()
+        return jsonify({'message': 'Seller ID\'ler başarıyla silindi'}), 200
+
+    except Exception as e:
+        logging.error(f"Veri silme hatası: {e}")
+        return jsonify({'message': 'Veri silme sırasında bir hata oluştu'}), 500
 
 
 
