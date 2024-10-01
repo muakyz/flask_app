@@ -12,21 +12,16 @@ import re
 import logging
 from datetime import datetime, timedelta
 
-# Ortam değişkenlerini yükle
 load_dotenv()
 
 app = Flask(__name__)
 CORS(app)
 
-# Logger Ayarları
 logging.basicConfig(level=logging.INFO)
 
-# JWT Ayarları
-JWT_SECRET = os.getenv('JWT_SECRET', 'your_jwt_secret_key')  # .env dosyasında tanımlı
+JWT_SECRET = os.getenv('JWT_SECRET', 'your_jwt_secret_key')  
 JWT_ALGORITHM = os.getenv('JWT_ALGORITHM', 'HS256')
-JWT_EXP_DELTA_SECONDS = int(os.getenv('JWT_EXP_DELTA_SECONDS', 3600))  # 1 saat
-
-# Veritabanı Bağlantı Dizesi Fonksiyonu
+JWT_EXP_DELTA_SECONDS = int(os.getenv('JWT_EXP_DELTA_SECONDS', 3600))  
 def get_connection():
     """
     Veritabanına bağlanmak için kullanılan fonksiyon.
@@ -50,7 +45,6 @@ def get_connection():
         logging.error(f"Veritabanı bağlantı hatası: {e}")
         raise
 
-# Bağlantıyı test etmek için
 try:
     conn = get_connection()
     cursor = conn.cursor()
@@ -60,30 +54,24 @@ try:
 except Exception as e:
     logging.error(f"SQL Server Bağlantı Hatası: {e}")
 
-# Kullanıcı Kayıt Verisi Doğrulama Fonksiyonu
 def validate_registration_data(username, email, password, gsm):
-    # Boş alan kontrolü
     if not all([username, email, password, gsm]):
         return False, 'Tüm alanlar gereklidir.'
 
-    # E-posta doğrulama
     email_regex = r'^[^\s@]+@[^\s@]+\.[^\s@]+$'
     if not re.match(email_regex, email):
         return False, 'Geçerli bir e-posta adresi giriniz.'
 
-    # Şifre doğrulama: En az 8 karakter, bir büyük harf, bir küçük harf, bir sayı
     password_regex = r'^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)[a-zA-Z\d]{8,}$'
     if not re.match(password_regex, password):
         return False, 'Şifre en az 8 karakter, bir büyük harf, bir küçük harf ve bir sayı içermelidir.'
 
-    # GSM numarası doğrulama (sadece 10 basamaklı rakamlar)
     gsm_regex = r'^\d{10}$'
     if not re.match(gsm_regex, gsm):
         return False, 'Geçerli bir GSM numarası giriniz.'
 
     return True, ''
 
-# JWT Token Oluşturma Fonksiyonu
 def generate_jwt(user_id, email, username):
     payload = {
         'id': user_id,
@@ -94,12 +82,10 @@ def generate_jwt(user_id, email, username):
     token = jwt.encode(payload, JWT_SECRET, algorithm=JWT_ALGORITHM)
     return token
 
-# JWT Token Doğrulama Dekoratörü
 def token_required(f):
     @wraps(f)
     def decorated(*args, **kwargs):
         token = None
-        # Token, Authorization header içinde "Bearer <token>" formatında olmalı
         auth_header = request.headers.get('Authorization')
         if auth_header and len(auth_header.split()) == 2:
             token = auth_header.split()[1]
@@ -123,16 +109,12 @@ def register():
     email = data.get('email')
     password = data.get('password')
     gsm = data.get('gsm')
-
-    # 1. Boş alan kontrolü ve doğrulama
     is_valid, message = validate_registration_data(username, email, password, gsm)
     if not is_valid:
         return jsonify({'message': message}), 400
 
     try:
         cursor = conn.cursor()
-
-        # 2. Kullanıcı adı, e-posta ve GSM'in veritabanında olup olmadığını kontrol et
         check_query = """
             SELECT * FROM Users 
             WHERE username = ? OR email = ? OR gsm = ?
@@ -148,10 +130,8 @@ def register():
             if existing_user.gsm == gsm:
                 return jsonify({'message': 'GSM numarası zaten kayıtlı.'}), 409
 
-        # 3. Şifreyi hashleyelim
         hashed_password = bcrypt.hashpw(password.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
 
-        # 4. Kullanıcıyı veritabanına ekle
         insert_query = """
             INSERT INTO Users (username, email, password, gsm) 
             VALUES (?, ?, ?, ?)
@@ -171,15 +151,11 @@ def login():
     data = request.get_json()
     email = data.get('email')
     password = data.get('password')
-
-    # 1. Boş alan kontrolü
     if not all([email, password]):
         return jsonify({'message': 'E-posta ve şifre gereklidir.'}), 400
 
     try:
         cursor = conn.cursor()
-
-        # 2. Kullanıcıyı e-posta ile bulma
         query = "SELECT * FROM Users WHERE email = ?"
         cursor.execute(query, (email,))
         user = cursor.fetchone()
@@ -187,14 +163,11 @@ def login():
         if not user:
             return jsonify({'message': 'Kullanıcı bulunamadı'}), 404
 
-        # 3. Şifre doğrulama
         if not bcrypt.checkpw(password.encode('utf-8'), user.password.encode('utf-8')):
             return jsonify({'message': 'Geçersiz şifre'}), 400
 
-        # 4. JWT Token oluşturma
         token = generate_jwt(user.user_id, user.email, user.username)
 
-        # Giriş başarılı yanıtı
         return jsonify({
             'message': 'Giriş başarılı',
             'token': token,
@@ -209,56 +182,7 @@ def login():
         logging.error(f"Giriş hatası: {e}")
         return jsonify({'message': 'Giriş sırasında hata oluştu'}), 500
 
-# Veri Ekleme Endpoint
-@app.route('/data', methods=['POST'])
-@token_required
-def add_data(current_user_id):
-    data = request.get_json()
-    data_field1 = data.get('dataField1')
-    data_field2 = data.get('dataField2')
-
-    # GSM numarası doğrulama (isteğe bağlı)
-    # Ek doğrulamalar ekleyebilirsiniz
-
-    try:
-        cursor = conn.cursor()
-        insert_query = """
-            INSERT INTO UserData (user_id, data_field1, data_field2) 
-            VALUES (?, ?, ?)
-        """
-        cursor.execute(insert_query, (current_user_id, data_field1, data_field2))
-        conn.commit()
-        return jsonify({'message': 'Veri başarıyla eklendi'}), 201
-
-    except Exception as e:
-        logging.error(f"Veri ekleme hatası: {e}")
-        return jsonify({'message': 'Veri ekleme sırasında bir hata oluştu'}), 500
-
-# Veri Getirme Endpoint
-@app.route('/data', methods=['GET'])
-@token_required
-def get_data(current_user_id):
-    try:
-        cursor = conn.cursor()
-        query = "SELECT * FROM UserData WHERE user_id = ?"
-        cursor.execute(query, (current_user_id,))
-        rows = cursor.fetchall()
-        # Sütun adlarını almak için
-        columns = [column[0] for column in cursor.description]
-        result = []
-        for row in rows:
-            row_dict = {}
-            for idx, value in enumerate(row):
-                row_dict[columns[idx]] = value
-            result.append(row_dict)
-        return jsonify(result), 200
-
-    except Exception as e:
-        logging.error(f"Veri getirme hatası: {e}")
-        return jsonify({'message': 'Veri getirme sırasında bir hata oluştu'}), 500
-
-
-# Seller ID Ekleme Endpoint
+# Sellerid ekle
 @app.route('/add_seller_id_to_tracking', methods=['POST'])
 @token_required
 def add_seller_id_to_tracking(current_user_id):
@@ -272,14 +196,12 @@ def add_seller_id_to_tracking(current_user_id):
         cursor = conn.cursor()
 
         for seller_id in seller_ids:
-            # Userid_Sellerid tablosunda aynı (user_id, seller_id) çiftinin olup olmadığını kontrol ediyoruz
             check_userid_sellerid_query = """
                 SELECT 1 FROM Userid_Sellerid WHERE user_id = ? AND seller_id = ?
             """
             cursor.execute(check_userid_sellerid_query, (current_user_id, seller_id))
             result_userid_sellerid = cursor.fetchone()
 
-            # Eğer bu kayıt yoksa ekliyoruz
             if not result_userid_sellerid:
                 insert_query_userid_sellerid = """
                     INSERT INTO Userid_Sellerid (user_id, seller_id) 
@@ -287,14 +209,12 @@ def add_seller_id_to_tracking(current_user_id):
                 """
                 cursor.execute(insert_query_userid_sellerid, (current_user_id, seller_id))
 
-            # Sellerids tablosunda bu seller_id'nin olup olmadığını kontrol ediyoruz
             check_sellerids_query = """
                 SELECT 1 FROM Sellerids WHERE seller_id = ?
             """
             cursor.execute(check_sellerids_query, (seller_id,))
             result_sellerids = cursor.fetchone()
 
-            # Eğer bu seller_id yoksa ekliyoruz
             if not result_sellerids:
                 insert_query_sellerids = """
                     INSERT INTO Sellerids (seller_id)
@@ -310,7 +230,7 @@ def add_seller_id_to_tracking(current_user_id):
         return jsonify({'message': 'Veri ekleme sırasında bir hata oluştu'}), 500
 
 
-
+# Sellerid sil
 @app.route('/delete_seller_id_from_tracking', methods=['DELETE'])
 @token_required
 def delete_seller_id_from_tracking(current_user_id):
@@ -347,7 +267,7 @@ def delete_seller_id_from_tracking(current_user_id):
         logging.error(f"Veri silme hatası: {e}")
         return jsonify({'message': 'Veri silme sırasında bir hata oluştu'}), 500
 
-
+# Kullanıcının profit tablosunu getir
 @app.route('/get_profit_by_user', methods=['GET'])
 @token_required 
 def get_profit_by_user(current_user_id):
@@ -388,8 +308,6 @@ def get_profit_by_user(current_user_id):
         return jsonify({'message': 'Veri çekme sırasında hata oluştu.'}), 500
 
 
-
-# Uygulamanın Başlatılması
 if __name__ == '__main__':
     PORT = 5000
     app.run(host='0.0.0.0', port=PORT, debug=True)
