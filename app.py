@@ -337,7 +337,7 @@ def premium_profit(current_user_id):
 
 @app.route('/beta_request_asin_USA', methods=['POST'])
 @token_required  
-def beta_request_asin(current_user_id):
+def beta_request_asin_USA(current_user_id):
     try:
         asins = request.json.get('asins')
         if not asins or not isinstance(asins, list):
@@ -363,7 +363,7 @@ def beta_request_asin(current_user_id):
 
 @app.route('/beta_request_asin_UK', methods=['POST'])
 @token_required  
-def beta_request_asin(current_user_id):
+def beta_request_asin_UK(current_user_id):
     try:
         asins = request.json.get('asins')
         if not asins or not isinstance(asins, list):
