@@ -335,7 +335,7 @@ def premium_profit(current_user_id):
         return jsonify({'message': 'Veri çekme sırasında hata oluştu.'}), 500
     
 
-@app.route('/beta_request_asin', methods=['POST'])
+@app.route('/beta_request_asin_USA', methods=['POST'])
 @token_required  
 def beta_request_asin(current_user_id):
     try:
@@ -361,6 +361,31 @@ def beta_request_asin(current_user_id):
         logging.error(f"Veritabanı hatası: {e}")
         return jsonify({'message': 'Veri çekme sırasında hata oluştu.'}), 500
 
+@app.route('/beta_request_asin_UK', methods=['POST'])
+@token_required  
+def beta_request_asin(current_user_id):
+    try:
+        asins = request.json.get('asins')
+        if not asins or not isinstance(asins, list):
+            return jsonify({'message': 'Geçerli ASIN listesi sağlamalısınız.'}), 400
+        
+        placeholders = ','.join(['?'] * len(asins))
+        query = f"SELECT * FROM TRACKINGUK WHERE asins IN ({placeholders})"
+        
+        with conn.cursor() as cursor:
+            cursor.execute(query, asins)
+            tracking_results = cursor.fetchall()
+
+        if tracking_results:
+            columns = [col[0] for col in cursor.description]
+            tracking_list = [dict(zip(columns, row)) for row in tracking_results]
+            return jsonify(tracking_list), 200
+        else:
+            return jsonify({'message': 'Veri bulunamadı.'}), 404
+
+    except Exception as e:
+        logging.error(f"Veritabanı hatası: {e}")
+        return jsonify({'message': 'Veri çekme sırasında hata oluştu.'}), 500
 
 
 if __name__ == '__main__':
