@@ -1,6 +1,6 @@
-Flask==2.3.2
-Flask-Cors==3.0.10
-pyodbc==4.0.35
-bcrypt==4.0.1
-PyJWT==2.8.0
-python-dotenv==1.0.0
+Flask
+Flask-Cors
+pyodbc
+bcrypt
+PyJWT
+python-dotenv
