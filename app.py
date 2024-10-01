@@ -21,7 +21,7 @@ logging.basicConfig(level=logging.INFO)
 
 JWT_SECRET = os.getenv('JWT_SECRET', 'your_jwt_secret_key')  
 JWT_ALGORITHM = os.getenv('JWT_ALGORITHM', 'HS256')
-JWT_EXP_DELTA_SECONDS = int(os.getenv('JWT_EXP_DELTA_SECONDS', 3600))  
+JWT_EXP_DELTA_SECONDS = int(os.getenv('JWT_EXP_DELTA_SECONDS', 70600))  
 def get_connection():
     """
     Veritabanına bağlanmak için kullanılan fonksiyon.
@@ -288,7 +288,6 @@ def get_profit_by_user(current_user_id):
                 )
             )
         """
-
         cursor.execute(query, (current_user_id,))
         profits = cursor.fetchall()
         if profits:
@@ -307,6 +306,33 @@ def get_profit_by_user(current_user_id):
         logging.error(f"Veritabanı hatası: {e}")
         return jsonify({'message': 'Veri çekme sırasında hata oluştu.'}), 500
 
+#Premium Profit
+@app.route('/premium_profit', methods=['GET'])
+@token_required  
+def premium_profit(current_user_id):
+    try:
+        cursor = conn.cursor()
+        query = """
+            SELECT * 
+            FROM PROFIT 
+            WHERE past_month_sold IS NOT NULL 
+            AND profit_percentage > 20
+        """
+        cursor.execute(query)
+        premium_profits = cursor.fetchall()
+
+        if premium_profits:
+            columns = [col[0] for col in cursor.description]  # Get column names
+            profit_list = []
+            for row in premium_profits:
+                profit_list.append(dict(zip(columns, row)))  # Zip column names and row data to form dictionary
+            return jsonify(profit_list), 200
+        else:
+            return jsonify({'message': 'Premium kar kaydı bulunamadı.'}), 404
+
+    except Exception as e:
+        logging.error(f"Veritabanı hatası: {e}")
+        return jsonify({'message': 'Veri çekme sırasında hata oluştu.'}), 500
 
 if __name__ == '__main__':
     PORT = 5000
