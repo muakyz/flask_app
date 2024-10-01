@@ -348,6 +348,44 @@ def delete_seller_id_from_tracking(current_user_id):
         return jsonify({'message': 'Veri silme sırasında bir hata oluştu'}), 500
 
 
+@app.route('/get_profit_by_user', methods=['GET'])
+@token_required 
+def get_profit_by_user(current_user_id):
+    try:
+        cursor = conn.cursor()
+
+        query = """
+            SELECT * 
+            FROM PROFIT 
+            WHERE asins IN (
+                SELECT asins 
+                FROM nafs 
+                WHERE seller_id IN (
+                    SELECT seller_id 
+                    FROM Userid_Sellerid 
+                    WHERE user_id = ? 
+                    AND PROFIT.inserted_at > Userid_Sellerid.inserted_at
+                )
+            )
+        """
+
+        cursor.execute(query, (current_user_id,))
+        profits = cursor.fetchall()
+        if profits:
+            profit_list = []
+            for row in profits:
+                profit_list.append({
+                    'asin': row['asin'],
+                    'profit': row['profit'],
+                    'inserted_at': row['inserted_at'],
+                })
+            return jsonify(profit_list), 200
+        else:
+            return jsonify({'message': 'Kayıt bulunamadı.'}), 404
+
+    except Exception as e:
+        logging.error(f"Veritabanı hatası: {e}")
+        return jsonify({'message': 'Veri çekme sırasında hata oluştu.'}), 500
 
 
 
