@@ -182,6 +182,22 @@ def login():
         logging.error(f"Giriş hatası: {e}")
         return jsonify({'message': 'Giriş sırasında hata oluştu'}), 500
 
+# Sellerid getir
+@app.route('/get_sellerids_for_user', methods=['GET'])
+@token_required
+def get_sellerids_for_user(current_user_id):
+    try:
+        cursor = conn.cursor()
+        query = "SELECT seller_id FROM Userid_Sellerid WHERE user_id = ?"
+        cursor.execute(query, (current_user_id,))
+        rows = cursor.fetchall()
+        seller_ids = [row.seller_id for row in rows]
+        return jsonify({'seller_ids': seller_ids}), 200
+    except Exception as e:
+        logging.error(f"Veri çekme hatası: {e}")
+        return jsonify({'message': 'Veri çekme sırasında bir hata oluştu.'}), 500
+
+
 # Sellerid ekle
 @app.route('/add_seller_id_to_tracking', methods=['POST'])
 @token_required
