@@ -347,7 +347,7 @@ def delete_seller_id_from_tracking(current_user_id):
 
 @app.route('/get_profit_by_user', methods=['GET'])
 @token_required
-@subscription_required(3)
+@subscription_required(2)
 def get_profit_by_user(current_user_id):
     try:
         cursor = conn.cursor()
@@ -414,7 +414,7 @@ def premium_profit(current_user_id):
 
 @app.route('/beta_request_asin_USA', methods=['POST'])
 @token_required
-@subscription_required(3)  # Abonelik tipi 3 ve üzeri
+@subscription_required(3)  
 def beta_request_asin_USA(current_user_id):
     try:
         asins = request.json.get('asins')
@@ -440,7 +440,7 @@ def beta_request_asin_USA(current_user_id):
 
 @app.route('/beta_request_asin_UK', methods=['POST'])
 @token_required
-@subscription_required(3)  # Abonelik tipi 3 ve üzeri
+@subscription_required(3) 
 def beta_request_asin_UK(current_user_id):
     try:
         asins = request.json.get('asins')
