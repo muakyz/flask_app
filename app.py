@@ -11,6 +11,7 @@ import os
 import re
 import logging
 from datetime import datetime, timedelta
+import uuid
 
 load_dotenv()
 
@@ -21,12 +22,9 @@ logging.basicConfig(level=logging.INFO)
 
 JWT_SECRET = os.getenv('JWT_SECRET', 'your_jwt_secret_key')  
 JWT_ALGORITHM = os.getenv('JWT_ALGORITHM', 'HS256')
-JWT_EXP_DELTA_SECONDS = int(os.getenv('JWT_EXP_DELTA_SECONDS', 70600))  
+JWT_EXP_DELTA_SECONDS = int(os.getenv('JWT_EXP_DELTA_SECONDS', 3600))  
+
 def get_connection():
-    """
-    Veritabanına bağlanmak için kullanılan fonksiyon.
-    Bağlantı bilgileri çevresel değişkenlerden alınmalıdır.
-    """
     server = os.getenv('DB_SERVER', '45.155.159.142,1433')
     database = os.getenv('DB_DATABASE', 'AMAZINGO')
     driver = os.getenv('DB_DRIVER', 'ODBC Driver 17 for SQL Server')
@@ -72,11 +70,12 @@ def validate_registration_data(username, email, password, gsm):
 
     return True, ''
 
-def generate_jwt(user_id, email, username):
+def generate_jwt(user_id, email, username, session_id):
     payload = {
         'id': user_id,
         'email': email,
         'username': username,
+        'session_id': session_id,
         'exp': datetime.utcnow() + timedelta(seconds=JWT_EXP_DELTA_SECONDS)
     }
     token = jwt.encode(payload, JWT_SECRET, algorithm=JWT_ALGORITHM)
@@ -94,14 +93,31 @@ def token_required(f):
         try:
             data = jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGORITHM])
             current_user_id = data['id']
+            token_session_id = data.get('session_id')
+
+            cursor = conn.cursor()
+            query = "SELECT session_id FROM Users WHERE user_id = ?"
+            cursor.execute(query, (current_user_id,))
+            user = cursor.fetchone()
+
+            if not user:
+                return jsonify({'message': 'Kullanıcı bulunamadı.'}), 404
+
+            db_session_id = user.session_id
+
+            if token_session_id != db_session_id:
+                return jsonify({'message': 'Geçersiz veya sona ermiş token.'}), 401
+
         except jwt.ExpiredSignatureError:
             return jsonify({'message': 'Token süresi doldu.'}), 401
         except jwt.InvalidTokenError:
             return jsonify({'message': 'Geçersiz token.'}), 401
+        except Exception as e:
+            logging.error(f"Token doğrulama hatası: {e}")
+            return jsonify({'message': 'Token doğrulama sırasında hata oluştu.'}), 500
         return f(current_user_id, *args, **kwargs)
     return decorated
 
-# Kullanıcı Kayıt Endpoint
 @app.route('/register', methods=['POST'])
 def register():
     data = request.get_json()
@@ -145,7 +161,6 @@ def register():
         logging.error(f"Veritabanı hatası: {e}")
         return jsonify({'message': 'Kullanıcı kaydı sırasında hata oluştu'}), 500
 
-# Kullanıcı Giriş Endpoint
 @app.route('/login', methods=['POST'])
 def login():
     data = request.get_json()
@@ -166,7 +181,13 @@ def login():
         if not bcrypt.checkpw(password.encode('utf-8'), user.password.encode('utf-8')):
             return jsonify({'message': 'Geçersiz şifre'}), 400
 
-        token = generate_jwt(user.user_id, user.email, user.username)
+        new_session_id = str(uuid.uuid4())
+
+        update_query = "UPDATE Users SET session_id = ? WHERE user_id = ?"
+        cursor.execute(update_query, (new_session_id, user.user_id))
+        conn.commit()
+
+        token = generate_jwt(user.user_id, user.email, user.username, new_session_id)
 
         return jsonify({
             'message': 'Giriş başarılı',
@@ -182,7 +203,19 @@ def login():
         logging.error(f"Giriş hatası: {e}")
         return jsonify({'message': 'Giriş sırasında hata oluştu'}), 500
 
-# Sellerid getir
+@app.route('/logout', methods=['POST'])
+@token_required
+def logout(current_user_id):
+    try:
+        cursor = conn.cursor()
+        update_query = "UPDATE Users SET session_id = NULL WHERE user_id = ?"
+        cursor.execute(update_query, (current_user_id,))
+        conn.commit()
+        return jsonify({'message': 'Çıkış yapıldı.'}), 200
+    except Exception as e:
+        logging.error(f"Çıkış hatası: {e}")
+        return jsonify({'message': 'Çıkış sırasında hata oluştu'}), 500
+
 @app.route('/get_sellerids_for_user', methods=['GET'])
 @token_required
 def get_sellerids_for_user(current_user_id):
@@ -197,8 +230,6 @@ def get_sellerids_for_user(current_user_id):
         logging.error(f"Veri çekme hatası: {e}")
         return jsonify({'message': 'Veri çekme sırasında bir hata oluştu.'}), 500
 
-
-# Sellerid ekle
 @app.route('/add_seller_id_to_tracking', methods=['POST'])
 @token_required
 def add_seller_id_to_tracking(current_user_id):
@@ -245,8 +276,6 @@ def add_seller_id_to_tracking(current_user_id):
         logging.error(f"Veri ekleme hatası: {e}")
         return jsonify({'message': 'Veri ekleme sırasında bir hata oluştu'}), 500
 
-
-# Sellerid sil
 @app.route('/delete_seller_id_from_tracking', methods=['DELETE'])
 @token_required
 def delete_seller_id_from_tracking(current_user_id):
@@ -283,7 +312,6 @@ def delete_seller_id_from_tracking(current_user_id):
         logging.error(f"Veri silme hatası: {e}")
         return jsonify({'message': 'Veri silme sırasında bir hata oluştu'}), 500
 
-# Kullanıcının profit tablosunu getir
 @app.route('/get_profit_by_user', methods=['GET'])
 @token_required 
 def get_profit_by_user(current_user_id):
@@ -322,7 +350,6 @@ def get_profit_by_user(current_user_id):
         logging.error(f"Veritabanı hatası: {e}")
         return jsonify({'message': 'Veri çekme sırasında hata oluştu.'}), 500
 
-#Premium Profit
 @app.route('/premium_profit', methods=['GET'])
 @token_required  
 def premium_profit(current_user_id):
@@ -338,10 +365,10 @@ def premium_profit(current_user_id):
         premium_profits = cursor.fetchall()
 
         if premium_profits:
-            columns = [col[0] for col in cursor.description]  # Get column names
+            columns = [col[0] for col in cursor.description]
             profit_list = []
             for row in premium_profits:
-                profit_list.append(dict(zip(columns, row)))  # Zip column names and row data to form dictionary
+                profit_list.append(dict(zip(columns, row)))
             return jsonify(profit_list), 200
         else:
             return jsonify({'message': 'Premium kar kaydı bulunamadı.'}), 404
@@ -349,7 +376,6 @@ def premium_profit(current_user_id):
     except Exception as e:
         logging.error(f"Veritabanı hatası: {e}")
         return jsonify({'message': 'Veri çekme sırasında hata oluştu.'}), 500
-    
 
 @app.route('/beta_request_asin_USA', methods=['POST'])
 @token_required  
@@ -362,9 +388,8 @@ def beta_request_asin_USA(current_user_id):
         placeholders = ','.join(['?'] * len(asins))
         query = f"SELECT * FROM TRACKING WHERE asins IN ({placeholders})"
         
-        with conn.cursor() as cursor:
-            cursor.execute(query, asins)
-            tracking_results = cursor.fetchall()
+        cursor.execute(query, asins)
+        tracking_results = cursor.fetchall()
 
         if tracking_results:
             columns = [col[0] for col in cursor.description]
@@ -388,9 +413,8 @@ def beta_request_asin_UK(current_user_id):
         placeholders = ','.join(['?'] * len(asins))
         query = f"SELECT * FROM TRACKINGUK WHERE asins IN ({placeholders})"
         
-        with conn.cursor() as cursor:
-            cursor.execute(query, asins)
-            tracking_results = cursor.fetchall()
+        cursor.execute(query, asins)
+        tracking_results = cursor.fetchall()
 
         if tracking_results:
             columns = [col[0] for col in cursor.description]
@@ -402,7 +426,6 @@ def beta_request_asin_UK(current_user_id):
     except Exception as e:
         logging.error(f"Veritabanı hatası: {e}")
         return jsonify({'message': 'Veri çekme sırasında hata oluştu.'}), 500
-
 
 if __name__ == '__main__':
     PORT = 5000
