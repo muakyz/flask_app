@@ -70,12 +70,13 @@ def validate_registration_data(username, email, password, gsm):
 
     return True, ''
 
-def generate_jwt(user_id, email, username, session_id):
+def generate_jwt(user_id, email, username, session_id, subscription_type):
     payload = {
         'id': user_id,
         'email': email,
         'username': username,
         'session_id': session_id,
+        'subscription_type': subscription_type,  # Abonelik tipi ekleniyor
         'exp': datetime.utcnow() + timedelta(seconds=JWT_EXP_DELTA_SECONDS)
     }
     token = jwt.encode(payload, JWT_SECRET, algorithm=JWT_ALGORITHM)
@@ -94,9 +95,10 @@ def token_required(f):
             data = jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGORITHM])
             current_user_id = data['id']
             token_session_id = data.get('session_id')
+            token_subscription_type = data.get('subscription_type')  # Token'dan abonelik tipi alınıyor
 
             cursor = conn.cursor()
-            query = "SELECT session_id FROM Users WHERE user_id = ?"
+            query = "SELECT session_id, subscription_type FROM Users WHERE user_id = ?"
             cursor.execute(query, (current_user_id,))
             user = cursor.fetchone()
 
@@ -104,9 +106,17 @@ def token_required(f):
                 return jsonify({'message': 'Kullanıcı bulunamadı.'}), 404
 
             db_session_id = user.session_id
+            db_subscription_type = user.subscription_type
 
             if token_session_id != db_session_id:
                 return jsonify({'message': 'Geçersiz veya sona ermiş token.'}), 401
+
+            # Token'daki abonelik tipi ile veritabanındaki abonelik tipi karşılaştırılıyor
+            if token_subscription_type != db_subscription_type:
+                return jsonify({'message': 'Abonelik bilgileriniz güncel değil.'}), 401
+
+            # Kullanıcı bilgileri fonksiyona geçiriliyor
+            return f(current_user_id, db_subscription_type, *args, **kwargs)
 
         except jwt.ExpiredSignatureError:
             return jsonify({'message': 'Token süresi doldu.'}), 401
@@ -115,8 +125,22 @@ def token_required(f):
         except Exception as e:
             logging.error(f"Token doğrulama hatası: {e}")
             return jsonify({'message': 'Token doğrulama sırasında hata oluştu.'}), 500
-        return f(current_user_id, *args, **kwargs)
     return decorated
+
+def subscription_required(required_level):
+    """
+    Bu dekoratör, kullanıcının abonelik seviyesini kontrol eder.
+    required_level: Erişim için gerekli abonelik seviyesi (2 veya 3)
+    """
+    def decorator(f):
+        @wraps(f)
+        def decorated_function(current_user_id, user_subscription, *args, **kwargs):
+            if user_subscription >= required_level:
+                return f(current_user_id, *args, **kwargs)
+            else:
+                return jsonify({'message': 'Bu endpoint için yeterli abonelik seviyeniz yok.'}), 403
+        return decorated_function
+    return decorator
 
 @app.route('/register', methods=['POST'])
 def register():
@@ -148,11 +172,12 @@ def register():
 
         hashed_password = bcrypt.hashpw(password.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
 
+        # Yeni kullanıcı varsayılan olarak abonelik tipi 1 ile oluşturuluyor
         insert_query = """
-            INSERT INTO Users (username, email, password, gsm) 
-            VALUES (?, ?, ?, ?)
+            INSERT INTO Users (username, email, password, gsm, subscription_type) 
+            VALUES (?, ?, ?, ?, ?)
         """
-        cursor.execute(insert_query, (username, email, hashed_password, gsm))
+        cursor.execute(insert_query, (username, email, hashed_password, gsm, 1))
         conn.commit()
 
         return jsonify({'message': 'Kullanıcı başarıyla kaydedildi'}), 201
@@ -187,7 +212,10 @@ def login():
         cursor.execute(update_query, (new_session_id, user.user_id))
         conn.commit()
 
-        token = generate_jwt(user.user_id, user.email, user.username, new_session_id)
+        # Kullanıcının abonelik tipi alınıyor
+        subscription_type = user.subscription_type
+
+        token = generate_jwt(user.user_id, user.email, user.username, new_session_id, subscription_type)
 
         return jsonify({
             'message': 'Giriş başarılı',
@@ -195,7 +223,8 @@ def login():
             'user': {
                 'userid': user.user_id,
                 'username': user.username,
-                'email': user.email
+                'email': user.email,
+                'subscription_type': subscription_type  # Abonelik tipi gönderiliyor
             }
         }), 200
 
@@ -205,7 +234,7 @@ def login():
 
 @app.route('/logout', methods=['POST'])
 @token_required
-def logout(current_user_id):
+def logout(current_user_id, user_subscription):
     try:
         cursor = conn.cursor()
         update_query = "UPDATE Users SET session_id = NULL WHERE user_id = ?"
@@ -216,8 +245,10 @@ def logout(current_user_id):
         logging.error(f"Çıkış hatası: {e}")
         return jsonify({'message': 'Çıkış sırasında hata oluştu'}), 500
 
+# Abonelik Tipi 2 Gerektiren Endpoint'ler
 @app.route('/get_sellerids_for_user', methods=['GET'])
 @token_required
+@subscription_required(2)  # Abonelik tipi 2 ve üzeri
 def get_sellerids_for_user(current_user_id):
     try:
         cursor = conn.cursor()
@@ -232,6 +263,7 @@ def get_sellerids_for_user(current_user_id):
 
 @app.route('/add_seller_id_to_tracking', methods=['POST'])
 @token_required
+@subscription_required(2)  # Abonelik tipi 2 ve üzeri
 def add_seller_id_to_tracking(current_user_id):
     data = request.get_json()
     seller_ids = data.get('seller_id')
@@ -278,6 +310,7 @@ def add_seller_id_to_tracking(current_user_id):
 
 @app.route('/delete_seller_id_from_tracking', methods=['DELETE'])
 @token_required
+@subscription_required(2)  # Abonelik tipi 2 ve üzeri
 def delete_seller_id_from_tracking(current_user_id):
     data = request.get_json()
     seller_ids = data.get('seller_id')
@@ -313,7 +346,8 @@ def delete_seller_id_from_tracking(current_user_id):
         return jsonify({'message': 'Veri silme sırasında bir hata oluştu'}), 500
 
 @app.route('/get_profit_by_user', methods=['GET'])
-@token_required 
+@token_required
+@subscription_required(3)
 def get_profit_by_user(current_user_id):
     try:
         cursor = conn.cursor()
@@ -338,9 +372,9 @@ def get_profit_by_user(current_user_id):
             profit_list = []
             for row in profits:
                 profit_list.append({
-                    'asin': row['asin'],
-                    'profit': row['profit'],
-                    'inserted_at': row['inserted_at'],
+                    'asin': row[0],  
+                    'profit': row[1],  
+                    'inserted_at': row[2],  
                 })
             return jsonify(profit_list), 200
         else:
@@ -351,7 +385,8 @@ def get_profit_by_user(current_user_id):
         return jsonify({'message': 'Veri çekme sırasında hata oluştu.'}), 500
 
 @app.route('/premium_profit', methods=['GET'])
-@token_required  
+@token_required
+@subscription_required(3)  
 def premium_profit(current_user_id):
     try:
         cursor = conn.cursor()
@@ -378,7 +413,8 @@ def premium_profit(current_user_id):
         return jsonify({'message': 'Veri çekme sırasında hata oluştu.'}), 500
 
 @app.route('/beta_request_asin_USA', methods=['POST'])
-@token_required  
+@token_required
+@subscription_required(3)  # Abonelik tipi 3 ve üzeri
 def beta_request_asin_USA(current_user_id):
     try:
         asins = request.json.get('asins')
@@ -403,7 +439,8 @@ def beta_request_asin_USA(current_user_id):
         return jsonify({'message': 'Veri çekme sırasında hata oluştu.'}), 500
 
 @app.route('/beta_request_asin_UK', methods=['POST'])
-@token_required  
+@token_required
+@subscription_required(3)  # Abonelik tipi 3 ve üzeri
 def beta_request_asin_UK(current_user_id):
     try:
         asins = request.json.get('asins')
