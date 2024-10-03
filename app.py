@@ -484,7 +484,7 @@ def upload_excel_files(current_user_id, user_subscription):
         processed_data = exelisle.process_files(file_path1, file_path2)
     except Exception as e:
         logging.error(f"Dosya işleme hatası: {e}")
-        return jsonify({'message': 'Dosya işleme sırasında hata oluştu'}), 500
+        return jsonify({'message': f'Dosya işleme sırasında hata oluştu: {e}'}), 500
 
     try:
         cursor = conn.cursor()
@@ -493,11 +493,16 @@ def upload_excel_files(current_user_id, user_subscription):
         cursor.execute(delete_query, (current_user_id,))
 
         for index, row in processed_data.iterrows():
+            profit_value = row['profit']
+            if pd.isnull(profit_value):
+                logging.warning(f"Kayıt atlandı: ASIN {row['ASIN']} için 'profit' değeri geçersiz.")
+                continue  # Bu kaydı atla
+
             insert_query = """
                 INSERT INTO User_Temporary_Data (user_id, asin, profit)
                 VALUES (?, ?, ?)
             """
-            cursor.execute(insert_query, (current_user_id, row['ASIN'], row['profit']))
+            cursor.execute(insert_query, (current_user_id, row['ASIN'], profit_value))
         conn.commit()
 
         os.remove(file_path1)
@@ -506,7 +511,8 @@ def upload_excel_files(current_user_id, user_subscription):
         return jsonify({'message': 'Dosyalar başarıyla yüklendi ve işlendi'}), 200
     except Exception as e:
         logging.error(f"Veri kaydetme hatası: {e}")
-        return jsonify({'message': 'Veri kaydetme sırasında hata oluştu'}), 500
+        return jsonify({'message': f'Veri kaydetme sırasında hata oluştu: {e}'}), 500
+
 
 @app.route('/get_user_table', methods=['GET'])
 @token_required
