@@ -365,14 +365,14 @@ def get_profit_by_user(current_user_id):
         """
         cursor.execute(query, (current_user_id,))
         profits = cursor.fetchall()
+
         if profits:
+            columns = [col[0] for col in cursor.description]
+            
             profit_list = []
             for row in profits:
-                profit_list.append({
-                    'asin': row[0],
-                    'profit': row[1],
-                    'inserted_at': row[2],
-                })
+                profit_list.append(dict(zip(columns, row)))
+
             return jsonify(profit_list), 200
         else:
             return jsonify({'message': 'Kayıt bulunamadı.'}), 404
