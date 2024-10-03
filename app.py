@@ -1,5 +1,3 @@
-# app.py
-
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 import pyodbc
@@ -10,8 +8,11 @@ from dotenv import load_dotenv
 import os
 import re
 import logging
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 import uuid
+from werkzeug.utils import secure_filename
+import pandas as pd
+import exelisle
 
 load_dotenv()
 
@@ -20,16 +21,21 @@ CORS(app)
 
 logging.basicConfig(level=logging.INFO)
 
-JWT_SECRET = os.getenv('JWT_SECRET', 'your_jwt_secret_key')  
+JWT_SECRET = os.getenv('JWT_SECRET', 'your_jwt_secret_key')
 JWT_ALGORITHM = os.getenv('JWT_ALGORITHM', 'HS256')
-JWT_EXP_DELTA_SECONDS = int(os.getenv('JWT_EXP_DELTA_SECONDS', 3600))  
+JWT_EXP_DELTA_SECONDS = int(os.getenv('JWT_EXP_DELTA_SECONDS', 3600))
+
+UPLOAD_FOLDER = os.path.join(os.getcwd(), 'uploads')
+if not os.path.exists(UPLOAD_FOLDER):
+    os.makedirs(UPLOAD_FOLDER)
+app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
 
 def get_connection():
     server = os.getenv('DB_SERVER', '45.155.159.142,1433')
     database = os.getenv('DB_DATABASE', 'AMAZINGO')
     driver = os.getenv('DB_DRIVER', 'ODBC Driver 17 for SQL Server')
     username = os.getenv('DB_USERNAME', 'remote2')
-    password = os.getenv('DB_PASSWORD', '207933239')
+    password = os.getenv('DB_PASSWORD', 'your_db_password')
     connection_string = (
         f'DRIVER={{{driver}}};'
         f'SERVER={server};'
@@ -76,8 +82,8 @@ def generate_jwt(user_id, email, username, session_id, subscription_type):
         'email': email,
         'username': username,
         'session_id': session_id,
-        'subscription_type': subscription_type,  # Abonelik tipi ekleniyor
-        'exp': datetime.utcnow() + timedelta(seconds=JWT_EXP_DELTA_SECONDS)
+        'subscription_type': subscription_type,
+        'exp': datetime.now(timezone.utc) + timedelta(seconds=JWT_EXP_DELTA_SECONDS)
     }
     token = jwt.encode(payload, JWT_SECRET, algorithm=JWT_ALGORITHM)
     return token
@@ -95,7 +101,7 @@ def token_required(f):
             data = jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGORITHM])
             current_user_id = data['id']
             token_session_id = data.get('session_id')
-            token_subscription_type = data.get('subscription_type')  # Token'dan abonelik tipi alınıyor
+            token_subscription_type = data.get('subscription_type')
 
             cursor = conn.cursor()
             query = "SELECT session_id, subscription_type FROM Users WHERE user_id = ?"
@@ -111,11 +117,9 @@ def token_required(f):
             if token_session_id != db_session_id:
                 return jsonify({'message': 'Geçersiz veya sona ermiş token.'}), 401
 
-            # Token'daki abonelik tipi ile veritabanındaki abonelik tipi karşılaştırılıyor
             if token_subscription_type != db_subscription_type:
                 return jsonify({'message': 'Abonelik bilgileriniz güncel değil.'}), 401
 
-            # Kullanıcı bilgileri fonksiyona geçiriliyor
             return f(current_user_id, db_subscription_type, *args, **kwargs)
 
         except jwt.ExpiredSignatureError:
@@ -128,10 +132,6 @@ def token_required(f):
     return decorated
 
 def subscription_required(required_level):
-    """
-    Bu dekoratör, kullanıcının abonelik seviyesini kontrol eder.
-    required_level: Erişim için gerekli abonelik seviyesi (2 veya 3)
-    """
     def decorator(f):
         @wraps(f)
         def decorated_function(current_user_id, user_subscription, *args, **kwargs):
@@ -172,7 +172,6 @@ def register():
 
         hashed_password = bcrypt.hashpw(password.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
 
-        # Yeni kullanıcı varsayılan olarak abonelik tipi 1 ile oluşturuluyor
         insert_query = """
             INSERT INTO Users (username, email, password, gsm, subscription_type) 
             VALUES (?, ?, ?, ?, ?)
@@ -212,7 +211,6 @@ def login():
         cursor.execute(update_query, (new_session_id, user.user_id))
         conn.commit()
 
-        # Kullanıcının abonelik tipi alınıyor
         subscription_type = user.subscription_type
 
         token = generate_jwt(user.user_id, user.email, user.username, new_session_id, subscription_type)
@@ -224,7 +222,7 @@ def login():
                 'userid': user.user_id,
                 'username': user.username,
                 'email': user.email,
-                'subscription_type': subscription_type  # Abonelik tipi gönderiliyor
+                'subscription_type': subscription_type
             }
         }), 200
 
@@ -245,10 +243,9 @@ def logout(current_user_id, user_subscription):
         logging.error(f"Çıkış hatası: {e}")
         return jsonify({'message': 'Çıkış sırasında hata oluştu'}), 500
 
-# Abonelik Tipi 2 Gerektiren Endpoint'ler
 @app.route('/get_sellerids_for_user', methods=['GET'])
 @token_required
-@subscription_required(2)  # Abonelik tipi 2 ve üzeri
+@subscription_required(2)
 def get_sellerids_for_user(current_user_id):
     try:
         cursor = conn.cursor()
@@ -263,7 +260,7 @@ def get_sellerids_for_user(current_user_id):
 
 @app.route('/add_seller_id_to_tracking', methods=['POST'])
 @token_required
-@subscription_required(2)  # Abonelik tipi 2 ve üzeri
+@subscription_required(2)
 def add_seller_id_to_tracking(current_user_id):
     data = request.get_json()
     seller_ids = data.get('seller_id')
@@ -310,7 +307,7 @@ def add_seller_id_to_tracking(current_user_id):
 
 @app.route('/delete_seller_id_from_tracking', methods=['DELETE'])
 @token_required
-@subscription_required(2)  # Abonelik tipi 2 ve üzeri
+@subscription_required(2)
 def delete_seller_id_from_tracking(current_user_id):
     data = request.get_json()
     seller_ids = data.get('seller_id')
@@ -372,9 +369,9 @@ def get_profit_by_user(current_user_id):
             profit_list = []
             for row in profits:
                 profit_list.append({
-                    'asin': row[0],  
-                    'profit': row[1],  
-                    'inserted_at': row[2],  
+                    'asin': row[0],
+                    'profit': row[1],
+                    'inserted_at': row[2],
                 })
             return jsonify(profit_list), 200
         else:
@@ -386,7 +383,7 @@ def get_profit_by_user(current_user_id):
 
 @app.route('/premium_profit', methods=['GET'])
 @token_required
-@subscription_required(3)  
+@subscription_required(3)
 def premium_profit(current_user_id):
     try:
         cursor = conn.cursor()
@@ -414,16 +411,16 @@ def premium_profit(current_user_id):
 
 @app.route('/beta_request_asin_USA', methods=['POST'])
 @token_required
-@subscription_required(3)  
+@subscription_required(3)
 def beta_request_asin_USA(current_user_id):
     try:
         asins = request.json.get('asins')
         if not asins or not isinstance(asins, list):
             return jsonify({'message': 'Geçerli ASIN listesi sağlamalısınız.'}), 400
-        
+
         placeholders = ','.join(['?'] * len(asins))
         query = f"SELECT * FROM TRACKING WHERE asins IN ({placeholders})"
-        
+
         cursor.execute(query, asins)
         tracking_results = cursor.fetchall()
 
@@ -440,16 +437,16 @@ def beta_request_asin_USA(current_user_id):
 
 @app.route('/beta_request_asin_UK', methods=['POST'])
 @token_required
-@subscription_required(3) 
+@subscription_required(3)
 def beta_request_asin_UK(current_user_id):
     try:
         asins = request.json.get('asins')
         if not asins or not isinstance(asins, list):
             return jsonify({'message': 'Geçerli ASIN listesi sağlamalısınız.'}), 400
-        
+
         placeholders = ','.join(['?'] * len(asins))
         query = f"SELECT * FROM TRACKINGUK WHERE asins IN ({placeholders})"
-        
+
         cursor.execute(query, asins)
         tracking_results = cursor.fetchall()
 
@@ -463,6 +460,72 @@ def beta_request_asin_UK(current_user_id):
     except Exception as e:
         logging.error(f"Veritabanı hatası: {e}")
         return jsonify({'message': 'Veri çekme sırasında hata oluştu.'}), 500
+
+@app.route('/upload_excel_files', methods=['POST'])
+@token_required
+def upload_excel_files(current_user_id, user_subscription):
+    if 'file1' not in request.files or 'file2' not in request.files:
+        return jsonify({'message': 'Dosya eksik'}), 400
+
+    file1 = request.files['file1']
+    file2 = request.files['file2']
+
+    if file1.filename == '' or file2.filename == '':
+        return jsonify({'message': 'Dosya adı boş'}), 400
+
+    filename1 = secure_filename(file1.filename)
+    filename2 = secure_filename(file2.filename)
+    file_path1 = os.path.join(app.config['UPLOAD_FOLDER'], filename1)
+    file_path2 = os.path.join(app.config['UPLOAD_FOLDER'], filename2)
+    file1.save(file_path1)
+    file2.save(file_path2)
+
+    try:
+        processed_data = exelisle.process_files(file_path1, file_path2)
+    except Exception as e:
+        logging.error(f"Dosya işleme hatası: {e}")
+        return jsonify({'message': 'Dosya işleme sırasında hata oluştu'}), 500
+
+    try:
+        cursor = conn.cursor()
+
+        delete_query = "DELETE FROM User_Temporary_Data WHERE user_id = ?"
+        cursor.execute(delete_query, (current_user_id,))
+
+        for index, row in processed_data.iterrows():
+            insert_query = """
+                INSERT INTO User_Temporary_Data (user_id, asin, profit)
+                VALUES (?, ?, ?)
+            """
+            cursor.execute(insert_query, (current_user_id, row['ASIN'], row['profit']))
+        conn.commit()
+
+        os.remove(file_path1)
+        os.remove(file_path2)
+
+        return jsonify({'message': 'Dosyalar başarıyla yüklendi ve işlendi'}), 200
+    except Exception as e:
+        logging.error(f"Veri kaydetme hatası: {e}")
+        return jsonify({'message': 'Veri kaydetme sırasında hata oluştu'}), 500
+
+@app.route('/get_user_table', methods=['GET'])
+@token_required
+def get_user_table(current_user_id, user_subscription):
+    try:
+        cursor = conn.cursor()
+        query = "SELECT asin, profit FROM User_Temporary_Data WHERE user_id = ?"
+        cursor.execute(query, (current_user_id,))
+        rows = cursor.fetchall()
+        if rows:
+            data = []
+            for row in rows:
+                data.append({'asin': row.asin, 'profit': row.profit})
+            return jsonify(data), 200
+        else:
+            return jsonify({'message': 'Veri bulunamadı'}), 404
+    except Exception as e:
+        logging.error(f"Veri çekme hatası: {e}")
+        return jsonify({'message': 'Veri çekme sırasında hata oluştu'}), 500
 
 if __name__ == '__main__':
     PORT = 5000
