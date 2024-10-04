@@ -512,7 +512,8 @@ def upload_excel_files(current_user_id, user_subscription):
                             buy_box_amazon_30_days_target = ?, 
                             buy_box_eligible_offer_count = ?, 
                             amazon_availability_offer_target = ?, 
-                            roi = ? 
+                            roi = ?, 
+                            buy_box_current_source_converted = ?  
                         WHERE user_id = ? AND asin = ? 
                     """, (row['profit'], row['Buy Box: Current_source'], 
                           row['Buy Box: Current_target'], 
@@ -521,6 +522,7 @@ def upload_excel_files(current_user_id, user_subscription):
                           row['Buy Box Eligible Offer Count: New FBA_target'], 
                           row['Amazon: Availability of the Amazon offer_target'], 
                           row['roi'],  
+                          row['Buy Box: Current_source_converted'],  
                           current_user_id, row['ASIN']))
                 else:
                     cursor.execute(""" 
@@ -530,15 +532,17 @@ def upload_excel_files(current_user_id, user_subscription):
                             buy_box_amazon_30_days_target, 
                             buy_box_eligible_offer_count, 
                             amazon_availability_offer_target, 
-                            roi) 
-                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?) 
+                            roi, 
+                            buy_box_current_source_converted) 
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) 
                     """, (current_user_id, row['ASIN'], row['profit'],  
                           row['Buy Box: Current_source'], row['Buy Box: Current_target'], 
                           row['Bought in past month_target'], 
                           row['Buy Box: % Amazon 30 days_target'], 
                           row['Buy Box Eligible Offer Count: New FBA_target'], 
                           row['Amazon: Availability of the Amazon offer_target'],
-                          row['roi']))  
+                          row['roi'],
+                          row['Buy Box: Current_source_converted']))  
                     
             except Exception as sql_error:
                 logging.error(f"SQL Error: {sql_error}")
@@ -552,6 +556,7 @@ def upload_excel_files(current_user_id, user_subscription):
                 'asin': row['ASIN'],
                 'profit': row['profit'],
                 'bb_source': row['Buy Box: Current_source'],
+                'bb_source_converted': row['Buy Box: Current_source_converted'],
                 'bb_target': row['Buy Box: Current_target'],
                 'sold_target': row['Bought in past month_target'],
                 'bb_amazon_percentage': row['Buy Box: % Amazon 30 days_target'],
