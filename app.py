@@ -457,6 +457,27 @@ def beta_request_asin_UK(current_user_id):
         logging.error(f"Veritabanı hatası: {e}")
         return jsonify({'message': 'Veri çekme sırasında hata oluştu.'}), 500
 
+@app.route('/delete_asin', methods=['POST'])
+@token_required
+def delete_asin(current_user_id, user_subscription):
+    try:
+        data = request.get_json()
+        asin = data.get('asin')
+        
+        if not asin:
+            return jsonify({'message': 'ASIN eksik'}), 400
+
+        cursor = conn.cursor()
+        cursor.execute("""
+            DELETE FROM User_Temporary_Data WHERE user_id = ? AND asin = ?
+        """, (current_user_id, asin))
+        conn.commit()
+
+        return jsonify({'message': 'ASIN başarıyla silindi'}), 200
+
+    except Exception as e:
+        logging.error(f"ASIN silme hatası: {e}")
+        return jsonify({'message': f'ASIN silme sırasında hata oluştu: {e}'}), 500
 
 
 
@@ -488,13 +509,10 @@ def upload_excel_files(current_user_id, user_subscription):
     file2.save(file_path2)
 
     try:
-        processed_data = process2.process_files(file_path1, file_path2)  
-
+        processed_data = process2.process_files(file_path1, file_path2)
         os.remove(file_path1)
         os.remove(file_path2)
-
         cursor = conn.cursor()
-
         for index, row in processed_data.iterrows():
             try:
                 cursor.execute(""" 
@@ -502,7 +520,6 @@ def upload_excel_files(current_user_id, user_subscription):
                 """, (current_user_id, row['ASIN']))
                 
                 record_count = cursor.fetchone()[0]
-                
                 if record_count > 0:
                     cursor.execute(""" 
                         UPDATE User_Temporary_Data 
@@ -547,9 +564,7 @@ def upload_excel_files(current_user_id, user_subscription):
             except Exception as sql_error:
                 logging.error(f"SQL Error: {sql_error}")
                 return jsonify({'message': f'Veritabanı hatası: {sql_error}'}), 500
-
         conn.commit()
-
         data = []
         for index, row in processed_data.iterrows():
             data.append({
@@ -564,10 +579,7 @@ def upload_excel_files(current_user_id, user_subscription):
                 'is_amazon_selling': row['Amazon: Availability of the Amazon offer_target'],
                 'roi': row['roi']  
             })
-
-
         return jsonify(data), 200
-
     except Exception as e:
         logging.error(f"Dosya işleme hatası: {e}")
         return jsonify({'message': f'Dosya işleme sırasında hata oluştu: {e}'}), 500
