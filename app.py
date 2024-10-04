@@ -443,20 +443,16 @@ def beta_request_asin_UK(current_user_id):
         asins = request.json.get('asins')
         if not asins or not isinstance(asins, list):
             return jsonify({'message': 'Geçerli ASIN listesi sağlamalısınız.'}), 400
-
         placeholders = ','.join(['?'] * len(asins))
         query = f"SELECT * FROM TRACKINGUK WHERE asins IN ({placeholders})"
-
         cursor.execute(query, asins)
         tracking_results = cursor.fetchall()
-
         if tracking_results:
             columns = [col[0] for col in cursor.description]
             tracking_list = [dict(zip(columns, row)) for row in tracking_results]
             return jsonify(tracking_list), 200
         else:
             return jsonify({'message': 'Veri bulunamadı.'}), 404
-
     except Exception as e:
         logging.error(f"Veritabanı hatası: {e}")
         return jsonify({'message': 'Veri çekme sırasında hata oluştu.'}), 500
@@ -492,9 +488,8 @@ def upload_excel_files(current_user_id, user_subscription):
     file2.save(file_path2)
 
     try:
-        processed_data = process2.process_files(file_path1, file_path2)  # process_files fonksiyonunu kullan
-        
-        # Dosyaları işlemden sonra sil
+        processed_data = process2.process_files(file_path1, file_path2)  
+
         os.remove(file_path1)
         os.remove(file_path2)
 
@@ -502,7 +497,6 @@ def upload_excel_files(current_user_id, user_subscription):
 
         for index, row in processed_data.iterrows():
             try:
-                # Kayıt kontrolü ve ekleme/güncelleme işlemi
                 cursor.execute(""" 
                     SELECT COUNT(*) FROM User_Temporary_Data WHERE user_id = ? AND asin = ? 
                 """, (current_user_id, row['ASIN']))
@@ -510,7 +504,6 @@ def upload_excel_files(current_user_id, user_subscription):
                 record_count = cursor.fetchone()[0]
                 
                 if record_count > 0:
-                    # Güncelleme işlemi
                     cursor.execute(""" 
                         UPDATE User_Temporary_Data 
                         SET profit = ?, buy_box_current_source = ?, 
@@ -518,7 +511,8 @@ def upload_excel_files(current_user_id, user_subscription):
                             bought_in_past_month_target = ?, 
                             buy_box_amazon_30_days_target = ?, 
                             buy_box_eligible_offer_count = ?, 
-                            amazon_availability_offer_target = ? 
+                            amazon_availability_offer_target = ?, 
+                            roi = ? 
                         WHERE user_id = ? AND asin = ? 
                     """, (row['profit'], row['Buy Box: Current_source'], 
                           row['Buy Box: Current_target'], 
@@ -526,23 +520,25 @@ def upload_excel_files(current_user_id, user_subscription):
                           row['Buy Box: % Amazon 30 days_target'], 
                           row['Buy Box Eligible Offer Count: New FBA_target'], 
                           row['Amazon: Availability of the Amazon offer_target'], 
+                          row['roi'],  
                           current_user_id, row['ASIN']))
                 else:
-                    # Yeni kayıt ekleme işlemi
                     cursor.execute(""" 
                         INSERT INTO User_Temporary_Data (user_id, asin, profit, 
                             buy_box_current_source, buy_box_current_target, 
                             bought_in_past_month_target, 
                             buy_box_amazon_30_days_target, 
                             buy_box_eligible_offer_count, 
-                            amazon_availability_offer_target) 
-                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?) 
+                            amazon_availability_offer_target, 
+                            roi) 
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?) 
                     """, (current_user_id, row['ASIN'], row['profit'],  
                           row['Buy Box: Current_source'], row['Buy Box: Current_target'], 
                           row['Bought in past month_target'], 
                           row['Buy Box: % Amazon 30 days_target'], 
                           row['Buy Box Eligible Offer Count: New FBA_target'], 
-                          row['Amazon: Availability of the Amazon offer_target']))
+                          row['Amazon: Availability of the Amazon offer_target'],
+                          row['roi']))  
                     
             except Exception as sql_error:
                 logging.error(f"SQL Error: {sql_error}")
@@ -554,14 +550,23 @@ def upload_excel_files(current_user_id, user_subscription):
         for index, row in processed_data.iterrows():
             data.append({
                 'asin': row['ASIN'],
-                'profit': row['profit']
+                'profit': row['profit'],
+                'bb_source': row['Buy Box: Current_source'],
+                'bb_target': row['Buy Box: Current_target'],
+                'sold_target': row['Bought in past month_target'],
+                'bb_amazon_percentage': row['Buy Box: % Amazon 30 days_target'],
+                'fba_seller_count': row['Buy Box Eligible Offer Count: New FBA_target'],
+                'is_amazon_selling': row['Amazon: Availability of the Amazon offer_target'],
+                'roi': row['roi']  
             })
+
 
         return jsonify(data), 200
 
     except Exception as e:
         logging.error(f"Dosya işleme hatası: {e}")
         return jsonify({'message': f'Dosya işleme sırasında hata oluştu: {e}'}), 500
+
 
 
 if __name__ == '__main__':
