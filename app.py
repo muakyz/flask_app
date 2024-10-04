@@ -12,7 +12,7 @@ from datetime import datetime, timedelta, timezone
 import uuid
 from werkzeug.utils import secure_filename
 import pandas as pd
-import exelisle
+import process2
 
 load_dotenv()
 
@@ -461,6 +461,9 @@ def beta_request_asin_UK(current_user_id):
         logging.error(f"Veritabanı hatası: {e}")
         return jsonify({'message': 'Veri çekme sırasında hata oluştu.'}), 500
 
+
+
+
 @app.route('/upload_excel_files', methods=['POST'])
 @token_required
 def upload_excel_files(current_user_id, user_subscription):
@@ -473,65 +476,93 @@ def upload_excel_files(current_user_id, user_subscription):
     if file1.filename == '' or file2.filename == '':
         return jsonify({'message': 'Dosya adı boş'}), 400
 
+    if not (file1.filename.endswith('.xlsx') or file1.filename.endswith('.xls')):
+        return jsonify({'message': 'Geçersiz dosya türü. Sadece .xlsx ve .xls dosyalarına izin verilir.'}), 400
+
+    if not (file2.filename.endswith('.xlsx') or file2.filename.endswith('.xls')):
+        return jsonify({'message': 'Geçersiz dosya türü. Sadece .xlsx ve .xls dosyalarına izin verilir.'}), 400
+
     filename1 = secure_filename(file1.filename)
     filename2 = secure_filename(file2.filename)
+
     file_path1 = os.path.join(app.config['UPLOAD_FOLDER'], filename1)
     file_path2 = os.path.join(app.config['UPLOAD_FOLDER'], filename2)
+
     file1.save(file_path1)
     file2.save(file_path2)
 
     try:
-        processed_data = exelisle.process_files(file_path1, file_path2)
+        processed_data = process2.process_files(file_path1, file_path2)  # process_files fonksiyonunu kullan
+        
+        # Dosyaları işlemden sonra sil
+        os.remove(file_path1)
+        os.remove(file_path2)
+
+        cursor = conn.cursor()
+
+        for index, row in processed_data.iterrows():
+            try:
+                # Kayıt kontrolü ve ekleme/güncelleme işlemi
+                cursor.execute(""" 
+                    SELECT COUNT(*) FROM User_Temporary_Data WHERE user_id = ? AND asin = ? 
+                """, (current_user_id, row['ASIN']))
+                
+                record_count = cursor.fetchone()[0]
+                
+                if record_count > 0:
+                    # Güncelleme işlemi
+                    cursor.execute(""" 
+                        UPDATE User_Temporary_Data 
+                        SET profit = ?, buy_box_current_source = ?, 
+                            buy_box_current_target = ?, 
+                            bought_in_past_month_target = ?, 
+                            buy_box_amazon_30_days_target = ?, 
+                            buy_box_eligible_offer_count = ?, 
+                            amazon_availability_offer_target = ? 
+                        WHERE user_id = ? AND asin = ? 
+                    """, (row['profit'], row['Buy Box: Current_source'], 
+                          row['Buy Box: Current_target'], 
+                          row['Bought in past month_target'], 
+                          row['Buy Box: % Amazon 30 days_target'], 
+                          row['Buy Box Eligible Offer Count: New FBA_target'], 
+                          row['Amazon: Availability of the Amazon offer_target'], 
+                          current_user_id, row['ASIN']))
+                else:
+                    # Yeni kayıt ekleme işlemi
+                    cursor.execute(""" 
+                        INSERT INTO User_Temporary_Data (user_id, asin, profit, 
+                            buy_box_current_source, buy_box_current_target, 
+                            bought_in_past_month_target, 
+                            buy_box_amazon_30_days_target, 
+                            buy_box_eligible_offer_count, 
+                            amazon_availability_offer_target) 
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?) 
+                    """, (current_user_id, row['ASIN'], row['profit'],  
+                          row['Buy Box: Current_source'], row['Buy Box: Current_target'], 
+                          row['Bought in past month_target'], 
+                          row['Buy Box: % Amazon 30 days_target'], 
+                          row['Buy Box Eligible Offer Count: New FBA_target'], 
+                          row['Amazon: Availability of the Amazon offer_target']))
+                    
+            except Exception as sql_error:
+                logging.error(f"SQL Error: {sql_error}")
+                return jsonify({'message': f'Veritabanı hatası: {sql_error}'}), 500
+
+        conn.commit()
+
+        data = []
+        for index, row in processed_data.iterrows():
+            data.append({
+                'asin': row['ASIN'],
+                'profit': row['profit']
+            })
+
+        return jsonify(data), 200
+
     except Exception as e:
         logging.error(f"Dosya işleme hatası: {e}")
         return jsonify({'message': f'Dosya işleme sırasında hata oluştu: {e}'}), 500
 
-    try:
-        cursor = conn.cursor()
-
-        delete_query = "DELETE FROM User_Temporary_Data WHERE user_id = ?"
-        cursor.execute(delete_query, (current_user_id,))
-
-        for index, row in processed_data.iterrows():
-            profit_value = row['profit']
-            if pd.isnull(profit_value):
-                logging.warning(f"Kayıt atlandı: ASIN {row['ASIN']} için 'profit' değeri geçersiz.")
-                continue  # Bu kaydı atla
-
-            insert_query = """
-                INSERT INTO User_Temporary_Data (user_id, asin, profit)
-                VALUES (?, ?, ?)
-            """
-            cursor.execute(insert_query, (current_user_id, row['ASIN'], profit_value))
-        conn.commit()
-
-        os.remove(file_path1)
-        os.remove(file_path2)
-
-        return jsonify({'message': 'Dosyalar başarıyla yüklendi ve işlendi'}), 200
-    except Exception as e:
-        logging.error(f"Veri kaydetme hatası: {e}")
-        return jsonify({'message': f'Veri kaydetme sırasında hata oluştu: {e}'}), 500
-
-
-@app.route('/get_user_table', methods=['GET'])
-@token_required
-def get_user_table(current_user_id, user_subscription):
-    try:
-        cursor = conn.cursor()
-        query = "SELECT asin, profit FROM User_Temporary_Data WHERE user_id = ?"
-        cursor.execute(query, (current_user_id,))
-        rows = cursor.fetchall()
-        if rows:
-            data = []
-            for row in rows:
-                data.append({'asin': row.asin, 'profit': row.profit})
-            return jsonify(data), 200
-        else:
-            return jsonify({'message': 'Veri bulunamadı'}), 404
-    except Exception as e:
-        logging.error(f"Veri çekme hatası: {e}")
-        return jsonify({'message': 'Veri çekme sırasında hata oluştu'}), 500
 
 if __name__ == '__main__':
     PORT = 5000
