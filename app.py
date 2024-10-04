@@ -497,8 +497,6 @@ def delete_non_favorited_asins(current_user_id, user_subscription):
         logging.error(f"ASIN silme hatası: {e}")
         return jsonify({'message': f'ASIN silme sırasında hata oluştu: {e}'}), 500
 
-
-
 @app.route('/update_favorited_asin', methods=['POST'])
 @token_required
 def update_favorited_asin(current_user_id, user_subscription):
@@ -524,7 +522,35 @@ def update_favorited_asin(current_user_id, user_subscription):
         logging.error(f"Favori durumu güncelleme hatası: {e}")
         return jsonify({'message': f'Favori durumu güncelleme sırasında hata oluştu: {e}'}), 500
 
+@app.route('/get_favorite_asins', methods=['GET'])
+@token_required
+@subscription_required(2)
+def get_favorite_asins(current_user_id, *args, **kwargs):
+    try:
+        cursor = conn.cursor()
 
+        query = """
+            SELECT * 
+            FROM User_Temporary_Data 
+            WHERE user_id = ? 
+              AND is_favorited = '1'
+        """
+        cursor.execute(query, (current_user_id,))
+        favorite_asins = cursor.fetchall()
+
+        if favorite_asins:
+            columns = [col[0] for col in cursor.description]
+            favorite_asins_list = []
+            for row in favorite_asins:
+                favorite_asins_list.append(dict(zip(columns, row)))
+
+            return jsonify(favorite_asins_list), 200
+        else:
+            return jsonify({'message': 'Kayıt bulunamadı.'}), 404
+
+    except Exception as e:
+        logging.error(f"Veritabanı hatası: {e}")
+        return jsonify({'message': 'Veri çekme sırasında hata oluştu.'}), 500
 
 
 @app.route('/upload_excel_files', methods=['POST'])
