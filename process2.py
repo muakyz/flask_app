@@ -19,7 +19,7 @@ def process_files(source_file_path, target_file_path):
                            
 
 
-    merged_df['roi'] = round((merged_df['profit'] / merged_df['Buy Box: Current_source_converted']), 2)
+    merged_df['roi'] = round(((merged_df['profit']) / merged_df['Buy Box: Current_source_converted']) * 100, 2)
     
     filtered_df = merged_df.dropna(subset=['Buy Box: Current_source', 'Buy Box: Current_target'])
     
