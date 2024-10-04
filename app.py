@@ -535,6 +535,16 @@ def upload_excel_files(current_user_id, user_subscription):
 
     file1 = request.files['file1']
     file2 = request.files['file2']
+    conversion_rate = request.form.get('conversion_rate')  # conversion_rate frontend'den alınır
+
+    # Eğer conversion_rate None ya da geçersizse, hata döndür
+    if conversion_rate is None:
+        return jsonify({'message': 'Dönüşüm oranı eksik.'}), 400
+
+    try:
+        conversion_rate = float(conversion_rate)
+    except ValueError:
+        return jsonify({'message': 'Geçersiz dönüşüm oranı.'}), 400
 
     if file1.filename == '' or file2.filename == '':
         return jsonify({'message': 'Dosya adı boş'}), 400
@@ -562,7 +572,8 @@ def upload_excel_files(current_user_id, user_subscription):
         """, (current_user_id,))
         conn.commit()
 
-        processed_data = process2.process_files(file_path1, file_path2)
+        # process_files fonksiyonuna conversion_rate ekleniyor
+        processed_data = process2.process_files(file_path1, file_path2, conversion_rate)
         os.remove(file_path1)
         os.remove(file_path2)
 
@@ -608,7 +619,7 @@ def upload_excel_files(current_user_id, user_subscription):
                             amazon_availability_offer_target, 
                             roi, 
                             buy_box_current_source_converted,
-                            is_favorited)  -- favori durumunu ekledik
+                            is_favorited)
                         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) 
                     """, (current_user_id, row['ASIN'], row['profit'],  
                           row['Buy Box: Current_source'], row['Buy Box: Current_target'], 

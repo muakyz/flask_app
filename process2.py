@@ -3,7 +3,7 @@ import warnings
 
 warnings.filterwarnings("ignore", category=UserWarning, module="openpyxl")
 
-def process_files(source_file_path, target_file_path):
+def process_files(source_file_path, target_file_path, conversion_rate):
     df_source = pd.read_excel(source_file_path)
     df_target = pd.read_excel(target_file_path)
     
@@ -11,14 +11,12 @@ def process_files(source_file_path, target_file_path):
     
     merged_df['VAT on Fees'] = (merged_df['FBA Fees:_target'] + merged_df['Referral Fee based on current Buy Box price_target']) * 0.2
     
-    merged_df['Buy Box: Current_source_converted'] = round(merged_df['Buy Box: Current_source'] * 0.75, 2)
+    merged_df['Buy Box: Current_source_converted'] = round(merged_df['Buy Box: Current_source'] * conversion_rate, 2)
     
     merged_df['profit'] = round((merged_df['Buy Box: Current_target'] - merged_df['Buy Box: Current_source_converted'] - 
                            merged_df['FBA Fees:_target'] - merged_df['Referral Fee based on current Buy Box price_target'] - 
-                           merged_df['VAT on Fees']),2)
-                           
-
-
+                           merged_df['VAT on Fees']), 2)
+    
     merged_df['roi'] = round(((merged_df['profit']) / merged_df['Buy Box: Current_source_converted']) * 100, 2)
     
     filtered_df = merged_df.dropna(subset=['Buy Box: Current_source', 'Buy Box: Current_target'])
