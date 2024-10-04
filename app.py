@@ -474,12 +474,11 @@ def delete_asin(current_user_id, user_subscription):
         """, (current_user_id, asin))
         conn.commit()
 
-        return jsonify({'message': 'ASIN başarıyla silindi'}), 200
+        return jsonify({'message': 'ASIN başarıyla silisndi'}), 200
 
     except Exception as e:
         logging.error(f"ASIN silme hatası: {e}")
         return jsonify({'message': f'ASIN silme sırasında hata oluştu: {e}'}), 500
-
 
 @app.route('/delete_non_favorited_asins', methods=['POST'])
 @token_required
