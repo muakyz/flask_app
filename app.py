@@ -555,18 +555,29 @@ def upload_excel_files(current_user_id, user_subscription):
     file2.save(file_path2)
 
     try:
+        cursor = conn.cursor()
+        cursor.execute("""
+            DELETE FROM User_Temporary_Data
+            WHERE user_id = ? AND is_favorited = 0
+        """, (current_user_id,))
+        conn.commit()
+
         processed_data = process2.process_files(file_path1, file_path2)
         os.remove(file_path1)
         os.remove(file_path2)
-        cursor = conn.cursor()
+
         for index, row in processed_data.iterrows():
             try:
                 cursor.execute(""" 
-                    SELECT COUNT(*) FROM User_Temporary_Data WHERE user_id = ? AND asin = ? 
+                    SELECT is_favorited 
+                    FROM User_Temporary_Data 
+                    WHERE user_id = ? AND asin = ? 
                 """, (current_user_id, row['ASIN']))
-                
-                record_count = cursor.fetchone()[0]
-                if record_count > 0:
+
+                record = cursor.fetchone()
+                is_favorited = record[0] if record else 0 
+
+                if record:
                     cursor.execute(""" 
                         UPDATE User_Temporary_Data 
                         SET profit = ?, buy_box_current_source = ?, 
@@ -596,8 +607,9 @@ def upload_excel_files(current_user_id, user_subscription):
                             buy_box_eligible_offer_count, 
                             amazon_availability_offer_target, 
                             roi, 
-                            buy_box_current_source_converted) 
-                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) 
+                            buy_box_current_source_converted,
+                            is_favorited)  -- favori durumunu ekledik
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) 
                     """, (current_user_id, row['ASIN'], row['profit'],  
                           row['Buy Box: Current_source'], row['Buy Box: Current_target'], 
                           row['Bought in past month_target'], 
@@ -605,12 +617,14 @@ def upload_excel_files(current_user_id, user_subscription):
                           row['Buy Box Eligible Offer Count: New FBA_target'], 
                           row['Amazon: Availability of the Amazon offer_target'],
                           row['roi'],
-                          row['Buy Box: Current_source_converted']))  
+                          row['Buy Box: Current_source_converted'],
+                          0))  
                     
             except Exception as sql_error:
                 logging.error(f"SQL Error: {sql_error}")
                 return jsonify({'message': f'Veritabanı hatası: {sql_error}'}), 500
         conn.commit()
+
         data = []
         for index, row in processed_data.iterrows():
             data.append({
@@ -623,14 +637,13 @@ def upload_excel_files(current_user_id, user_subscription):
                 'bb_amazon_percentage': row['Buy Box: % Amazon 30 days_target'],
                 'fba_seller_count': row['Buy Box Eligible Offer Count: New FBA_target'],
                 'is_amazon_selling': row['Amazon: Availability of the Amazon offer_target'],
-                'roi': row['roi']  
+                'roi': row['roi'],
+                'is_favorited': is_favorited  
             })
         return jsonify(data), 200
     except Exception as e:
         logging.error(f"Dosya işleme hatası: {e}")
         return jsonify({'message': f'Dosya işleme sırasında hata oluştu: {e}'}), 500
-
-
 
 
 if __name__ == '__main__':
