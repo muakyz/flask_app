@@ -457,6 +457,7 @@ def beta_request_asin_UK(current_user_id):
         logging.error(f"Veritabanı hatası: {e}")
         return jsonify({'message': 'Veri çekme sırasında hata oluştu.'}), 500
 
+
 @app.route('/delete_asin', methods=['POST'])
 @token_required
 def delete_asin(current_user_id, user_subscription):
@@ -478,6 +479,52 @@ def delete_asin(current_user_id, user_subscription):
     except Exception as e:
         logging.error(f"ASIN silme hatası: {e}")
         return jsonify({'message': f'ASIN silme sırasında hata oluştu: {e}'}), 500
+
+
+@app.route('/delete_non_favorited_asins', methods=['POST'])
+@token_required
+def delete_non_favorited_asins(current_user_id, user_subscription):
+    try:
+        cursor = conn.cursor()
+        cursor.execute("""
+            DELETE FROM User_Temporary_Data
+            WHERE user_id = ? AND is_favorited = 0
+        """, (current_user_id,))
+        conn.commit()
+
+        return jsonify({'message': 'Favorilenmemiş ASIN\'ler başarıyla silindi.'}), 200
+
+    except Exception as e:
+        logging.error(f"ASIN silme hatası: {e}")
+        return jsonify({'message': f'ASIN silme sırasında hata oluştu: {e}'}), 500
+
+
+
+@app.route('/update_favorited_asin', methods=['POST'])
+@token_required
+def update_favorited_asin(current_user_id, user_subscription):
+    try:
+        data = request.get_json()
+        asin = data.get('asin')
+        is_favorited = data.get('is_favorited', 0)
+
+        if not asin:
+            return jsonify({'message': 'ASIN eksik'}), 400
+
+        cursor = conn.cursor()
+        cursor.execute("""
+            UPDATE User_Temporary_Data 
+            SET is_favorited = ? 
+            WHERE user_id = ? AND asin = ?
+        """, (is_favorited, current_user_id, asin))
+        conn.commit()
+
+        return jsonify({'message': 'Favori durumu güncellendi.'}), 200
+
+    except Exception as e:
+        logging.error(f"Favori durumu güncelleme hatası: {e}")
+        return jsonify({'message': f'Favori durumu güncelleme sırasında hata oluştu: {e}'}), 500
+
 
 
 
@@ -583,6 +630,7 @@ def upload_excel_files(current_user_id, user_subscription):
     except Exception as e:
         logging.error(f"Dosya işleme hatası: {e}")
         return jsonify({'message': f'Dosya işleme sırasında hata oluştu: {e}'}), 500
+
 
 
 
