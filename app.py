@@ -528,12 +528,21 @@ def update_favorited_asin(current_user_id, user_subscription):
 def get_favorite_asins(current_user_id, *args, **kwargs):
     try:
         cursor = conn.cursor()
-
         query = """
-            SELECT * 
+            SELECT 
+                asin AS "ASIN", 
+                amazon_availability_offer_target AS "Is Amazon Offer Exist?", 
+                buy_box_current_source AS "Cost", 
+                buy_box_current_target AS "BuyBox Price", 
+                profit AS "PROFIT", 
+                bought_in_past_month_target AS "Past Month Sold", 
+                buy_box_eligible_offer_count AS "Total Sellers(FBA)", 
+                buy_box_amazon_30_days_target AS "Amazon BB %", 
+                roi AS "ROI %", 
+                is_favorited AS "Favori"
             FROM User_Temporary_Data 
             WHERE user_id = ? 
-              AND is_favorited = '1'
+              AND is_favorited = 1
         """
         cursor.execute(query, (current_user_id,))
         favorite_asins = cursor.fetchall()
@@ -546,12 +555,11 @@ def get_favorite_asins(current_user_id, *args, **kwargs):
 
             return jsonify(favorite_asins_list), 200
         else:
-            return jsonify({'message': 'Kayıt bulunamadı.'}), 404
+            return jsonify({'message': 'Favori ASIN bulunamadı.'}), 404
 
     except Exception as e:
         logging.error(f"Veritabanı hatası: {e}")
-        return jsonify({'message': 'Veri çekme sırasında hata oluştu.'}), 500
-
+        return jsonify({'message': 'Favori ASIN\'ler alınırken hata oluştu.'}), 500
 
 @app.route('/upload_excel_files', methods=['POST'])
 @token_required
