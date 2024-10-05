@@ -2,6 +2,9 @@ from flask import Flask, request, jsonify
 from flask_cors import CORS
 import pyodbc
 import bcrypt
+import random
+import string
+from mail_utils import send_email
 import jwt
 from functools import wraps
 from dotenv import load_dotenv
@@ -142,6 +145,11 @@ def subscription_required(required_level):
         return decorated_function
     return decorator
 
+
+
+
+
+
 @app.route('/register', methods=['POST'])
 def register():
     data = request.get_json()
@@ -149,99 +157,169 @@ def register():
     email = data.get('email')
     password = data.get('password')
     gsm = data.get('gsm')
-    is_valid, message = validate_registration_data(username, email, password, gsm)
-    if not is_valid:
-        return jsonify({'message': message}), 400
+
+    if not all([username, email, password, gsm]):
+        return jsonify({'message': 'All fields are required.'}), 400
 
     try:
-        cursor = conn.cursor()
-        check_query = """
-            SELECT * FROM Users 
-            WHERE username = ? OR email = ? OR gsm = ?
-        """
-        cursor.execute(check_query, (username, email, gsm))
-        existing_user = cursor.fetchone()
-
-        if existing_user:
-            if existing_user.username == username:
-                return jsonify({'message': 'Kullanıcı adı zaten kayıtlı.'}), 409
-            if existing_user.email == email:
-                return jsonify({'message': 'E-posta adresi zaten kayıtlı.'}), 409
-            if existing_user.gsm == gsm:
-                return jsonify({'message': 'GSM numarası zaten kayıtlı.'}), 409
+        cursor = get_connection().cursor()
+        cursor.execute("SELECT * FROM Users WHERE email = ?", (email,))
+        if cursor.fetchone():
+            return jsonify({'message': 'Email already exists.'}), 409
 
         hashed_password = bcrypt.hashpw(password.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
+        verification_code = ''.join(random.choices(string.digits, k=6))
 
+        # Save user with verification_code but not verified yet
         insert_query = """
-            INSERT INTO Users (username, email, password, gsm, subscription_type) 
-            VALUES (?, ?, ?, ?, ?)
+            INSERT INTO Users (username, email, password, gsm, subscription_type, is_verified, verification_code)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
         """
-        cursor.execute(insert_query, (username, email, hashed_password, gsm, 1))
-        conn.commit()
+        cursor.execute(insert_query, (username, email, hashed_password, gsm, 1, 0, verification_code))
+        cursor.connection.commit()
 
-        return jsonify({'message': 'Kullanıcı başarıyla kaydedildi'}), 201
+        # Send verification email
+        subject = "Email Verification"
+        body = f"Hi {username},\n\nYour verification code is: {verification_code}"
+        send_email(email, subject, body)
 
+        return jsonify({'message': 'Verification code sent to email.'}), 200
     except Exception as e:
-        logging.error(f"Veritabanı hatası: {e}")
-        return jsonify({'message': 'Kullanıcı kaydı sırasında hata oluştu'}), 500
+        logging.error(f"Registration error: {e}")
+        return jsonify({'message': 'Registration failed.'}), 500
+
+@app.route('/verify_email', methods=['POST'])
+def verify_email():
+    data = request.get_json()
+    email = data.get('email')
+    verification_code = data.get('verification_code')
+
+    try:
+        cursor = get_connection().cursor()
+        cursor.execute("SELECT * FROM Users WHERE email = ?", (email,))
+        user = cursor.fetchone()
+
+        if not user:
+            return jsonify({'message': 'User not found.'}), 404
+
+        # Check if the verification code matches
+        if user.verification_code != verification_code:
+            return jsonify({'message': 'Invalid verification code.'}), 400
+
+        cursor.execute("UPDATE Users SET is_verified = 1, verification_code = NULL WHERE email = ?", (email,))
+        cursor.connection.commit()
+
+        return jsonify({'message': 'Email verified successfully.'}), 200
+    except Exception as e:
+        logging.error(f"Verification error: {e}")
+        return jsonify({'message': 'Verification failed.'}), 500
 
 @app.route('/login', methods=['POST'])
 def login():
     data = request.get_json()
     email = data.get('email')
     password = data.get('password')
+
     if not all([email, password]):
-        return jsonify({'message': 'E-posta ve şifre gereklidir.'}), 400
+        return jsonify({'message': 'Email and password are required.'}), 400
 
     try:
-        cursor = conn.cursor()
-        query = "SELECT * FROM Users WHERE email = ?"
-        cursor.execute(query, (email,))
+        cursor = get_connection().cursor()
+        cursor.execute("SELECT * FROM Users WHERE email = ?", (email,))
         user = cursor.fetchone()
 
-        if not user:
-            return jsonify({'message': 'Kullanıcı bulunamadı'}), 404
+        if not user or not user.is_verified:
+            return jsonify({'message': 'User not found or not verified.'}), 404
 
         if not bcrypt.checkpw(password.encode('utf-8'), user.password.encode('utf-8')):
-            return jsonify({'message': 'Geçersiz şifre'}), 400
+            return jsonify({'message': 'Invalid password.'}), 400
 
         new_session_id = str(uuid.uuid4())
+        cursor.execute("UPDATE Users SET session_id = ? WHERE user_id = ?", (new_session_id, user.user_id))
+        cursor.connection.commit()
 
-        update_query = "UPDATE Users SET session_id = ? WHERE user_id = ?"
-        cursor.execute(update_query, (new_session_id, user.user_id))
-        conn.commit()
-
-        subscription_type = user.subscription_type
-
-        token = generate_jwt(user.user_id, user.email, user.username, new_session_id, subscription_type)
-
-        return jsonify({
-            'message': 'Giriş başarılı',
-            'token': token,
-            'user': {
-                'userid': user.user_id,
-                'username': user.username,
-                'email': user.email,
-                'subscription_type': subscription_type
-            }
-        }), 200
-
+        token = generate_jwt(user.user_id, user.email, user.username, new_session_id, user.subscription_type)
+        return jsonify({'message': 'Login successful', 'token': token}), 200
     except Exception as e:
-        logging.error(f"Giriş hatası: {e}")
-        return jsonify({'message': 'Giriş sırasında hata oluştu'}), 500
+        logging.error(f"Login error: {e}")
+        return jsonify({'message': 'Login failed.'}), 500
 
 @app.route('/logout', methods=['POST'])
 @token_required
-def logout(current_user_id, user_subscription):
+def logout(current_user_id):
     try:
-        cursor = conn.cursor()
-        update_query = "UPDATE Users SET session_id = NULL WHERE user_id = ?"
-        cursor.execute(update_query, (current_user_id,))
-        conn.commit()
-        return jsonify({'message': 'Çıkış yapıldı.'}), 200
+        cursor = get_connection().cursor()
+        cursor.execute("UPDATE Users SET session_id = NULL WHERE user_id = ?", (current_user_id,))
+        cursor.connection.commit()
+        return jsonify({'message': 'Logged out successfully.'}), 200
     except Exception as e:
-        logging.error(f"Çıkış hatası: {e}")
-        return jsonify({'message': 'Çıkış sırasında hata oluştu'}), 500
+        logging.error(f"Logout error: {e}")
+        return jsonify({'message': 'Logout failed.'}), 500
+
+@app.route('/forgot_password', methods=['POST'])
+def forgot_password():
+    data = request.get_json()
+    email = data.get('email')
+
+    try:
+        cursor = get_connection().cursor()
+        cursor.execute("SELECT * FROM Users WHERE email = ?", (email,))
+        user = cursor.fetchone()
+
+        if not user:
+            return jsonify({'message': 'User not found.'}), 404
+
+        verification_code = ''.join(random.choices(string.digits, k=6))
+        cursor.execute("UPDATE Users SET verification_code = ? WHERE email = ?", (verification_code, email))
+        cursor.connection.commit()
+
+        # Send password reset email
+        subject = "Password Reset Request"
+        body = f"Hi,\n\nYour password reset code is: {verification_code}"
+        send_email(email, subject, body)
+
+        return jsonify({'message': 'Password reset code sent to email.'}), 200
+    except Exception as e:
+        logging.error(f"Forgot password error: {e}")
+        return jsonify({'message': 'Password reset failed.'}), 500
+
+@app.route('/reset_password', methods=['POST'])
+def reset_password():
+    data = request.get_json()
+    email = data.get('email')
+    verification_code = data.get('verification_code')
+    new_password = data.get('newPassword')
+
+    try:
+        cursor = get_connection().cursor()
+        cursor.execute("SELECT * FROM Users WHERE email = ?", (email,))
+        user = cursor.fetchone()
+
+        if not user:
+            return jsonify({'message': 'User not found.'}), 404
+
+        # Check if the verification code matches
+        if user.verification_code != verification_code:
+            return jsonify({'message': 'Invalid verification code.'}), 400
+
+        hashed_password = bcrypt.hashpw(new_password.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
+        cursor.execute("UPDATE Users SET password = ?, verification_code = NULL WHERE email = ?", (hashed_password, email))
+        cursor.connection.commit()
+
+        return jsonify({'message': 'Password reset successfully.'}), 200
+    except Exception as e:
+        logging.error(f"Reset password error: {e}")
+        return jsonify({'message': 'Password reset failed.'}), 500
+
+
+
+
+
+
+
+
+
+
 
 @app.route('/get_sellerids_for_user', methods=['GET'])
 @token_required
@@ -545,7 +623,7 @@ def update_favorited_asin(current_user_id, user_subscription):
 
 @app.route('/get_favorite_asins', methods=['GET'])
 @token_required
-@subscription_required(2)
+@subscription_required(1)
 def get_favorite_asins(current_user_id, *args, **kwargs):
     try:
         cursor = conn.cursor()
