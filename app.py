@@ -557,6 +557,7 @@ def beta_request_asin_AU(current_user_id):
         return jsonify({'message': 'Veri çekme sırasında hata oluştu.'}), 500
 
 @app.route('/delete_asin', methods=['POST'])
+
 @token_required
 def delete_asin(current_user_id, user_subscription):
     try:
