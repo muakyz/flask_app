@@ -170,7 +170,6 @@ def register():
         hashed_password = bcrypt.hashpw(password.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
         verification_code = ''.join(random.choices(string.digits, k=6))
 
-        # Save user with verification_code but not verified yet
         insert_query = """
             INSERT INTO Users (username, email, password, gsm, subscription_type, is_verified, verification_code)
             VALUES (?, ?, ?, ?, ?, ?, ?)
@@ -178,7 +177,6 @@ def register():
         cursor.execute(insert_query, (username, email, hashed_password, gsm, 1, 0, verification_code))
         cursor.connection.commit()
 
-        # Send verification email
         subject = "Email Verification"
         body = f"Hi {username},\n\nYour verification code is: {verification_code}"
         send_email(email, subject, body)
@@ -202,7 +200,6 @@ def verify_email():
         if not user:
             return jsonify({'message': 'User not found.'}), 404
 
-        # Check if the verification code matches
         if user.verification_code != verification_code:
             return jsonify({'message': 'Invalid verification code.'}), 400
 
@@ -272,8 +269,6 @@ def forgot_password():
         verification_code = ''.join(random.choices(string.digits, k=6))
         cursor.execute("UPDATE Users SET verification_code = ? WHERE email = ?", (verification_code, email))
         cursor.connection.commit()
-
-        # Send password reset email
         subject = "Password Reset Request"
         body = f"Hi,\n\nYour password reset code is: {verification_code}"
         send_email(email, subject, body)
