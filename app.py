@@ -457,6 +457,27 @@ def beta_request_asin_UK(current_user_id):
         logging.error(f"Veritabanı hatası: {e}")
         return jsonify({'message': 'Veri çekme sırasında hata oluştu.'}), 500
 
+@app.route('/beta_request_asin_AU', methods=['POST'])
+@token_required
+@subscription_required(3)
+def beta_request_asin_AU(current_user_id):
+    try:
+        asins = request.json.get('asins')
+        if not asins or not isinstance(asins, list):
+            return jsonify({'message': 'Geçerli ASIN listesi sağlamalısınız.'}), 400
+        placeholders = ','.join(['?'] * len(asins))
+        query = f"SELECT * FROM TRACKINGAU WHERE asins IN ({placeholders})"
+        cursor.execute(query, asins)
+        tracking_results = cursor.fetchall()
+        if tracking_results:
+            columns = [col[0] for col in cursor.description]
+            tracking_list = [dict(zip(columns, row)) for row in tracking_results]
+            return jsonify(tracking_list), 200
+        else:
+            return jsonify({'message': 'Veri bulunamadı.'}), 404
+    except Exception as e:
+        logging.error(f"Veritabanı hatası: {e}")
+        return jsonify({'message': 'Veri çekme sırasında hata oluştu.'}), 500
 
 @app.route('/delete_asin', methods=['POST'])
 @token_required
