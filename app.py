@@ -120,7 +120,7 @@ def token_required(f):
             if token_session_id != db_session_id:
                 return jsonify({'message': 'Geçersiz veya sona ermiş token.'}), 401
 
-            if token_subscription_type != db_subscription_type:
+            if token_subscription_type < 1:  # Tüm endpointler için 1 numaralı abonelik yeterli
                 return jsonify({'message': 'Abonelik bilgileriniz güncel değil.'}), 401
 
             return f(current_user_id, db_subscription_type, *args, **kwargs)
@@ -144,11 +144,6 @@ def subscription_required(required_level):
                 return jsonify({'message': 'Bu endpoint için yeterli abonelik seviyeniz yok.'}), 403
         return decorated_function
     return decorator
-
-
-
-
-
 
 @app.route('/register', methods=['POST'])
 def register():
@@ -293,7 +288,6 @@ def reset_password():
         if not user:
             return jsonify({'message': 'User not found.'}), 404
 
-        # Check if the verification code matches
         if user.verification_code != verification_code:
             return jsonify({'message': 'Invalid verification code.'}), 400
 
@@ -306,19 +300,29 @@ def reset_password():
         logging.error(f"Reset password error: {e}")
         return jsonify({'message': 'Password reset failed.'}), 500
 
+@app.route('/get_user_info', methods=['GET'])
+@token_required
+def get_user_info(current_user_id, user_subscription):
+    try:
+        cursor = get_connection().cursor()
+        cursor.execute("SELECT username, email, gsm FROM Users WHERE user_id = ?", (current_user_id,))
+        user_info = cursor.fetchone()
 
-
-
-
-
-
-
-
-
+        if user_info:
+            return jsonify({
+                'username': user_info.username,
+                'email': user_info.email,
+                'gsm': user_info.gsm
+            }), 200
+        else:
+            return jsonify({'message': 'User not found.'}), 404
+    except Exception as e:
+        logging.error(f"User info retrieval error: {e}")
+        return jsonify({'message': 'User info retrieval failed.'}), 500
 
 @app.route('/get_sellerids_for_user', methods=['GET'])
 @token_required
-@subscription_required(2)
+@subscription_required(1)
 def get_sellerids_for_user(current_user_id):
     try:
         cursor = conn.cursor()
@@ -333,7 +337,7 @@ def get_sellerids_for_user(current_user_id):
 
 @app.route('/add_seller_id_to_tracking', methods=['POST'])
 @token_required
-@subscription_required(2)
+@subscription_required(1)
 def add_seller_id_to_tracking(current_user_id):
     data = request.get_json()
     seller_ids = data.get('seller_id')
@@ -380,7 +384,7 @@ def add_seller_id_to_tracking(current_user_id):
 
 @app.route('/delete_seller_id_from_tracking', methods=['DELETE'])
 @token_required
-@subscription_required(2)
+@subscription_required(1)
 def delete_seller_id_from_tracking(current_user_id):
     data = request.get_json()
     seller_ids = data.get('seller_id')
@@ -417,7 +421,7 @@ def delete_seller_id_from_tracking(current_user_id):
 
 @app.route('/get_profit_by_user', methods=['GET'])
 @token_required
-@subscription_required(2)
+@subscription_required(1)
 def get_profit_by_user(current_user_id):
     try:
         cursor = conn.cursor()
@@ -563,12 +567,12 @@ def delete_asin(current_user_id, user_subscription):
             return jsonify({'message': 'ASIN eksik'}), 400
 
         cursor = conn.cursor()
-        cursor.execute("""
+        cursor.execute(""" 
             DELETE FROM User_Temporary_Data WHERE user_id = ? AND asin = ?
         """, (current_user_id, asin))
         conn.commit()
 
-        return jsonify({'message': 'ASIN başarıyla silisndi'}), 200
+        return jsonify({'message': 'ASIN başarıyla silindi'}), 200
 
     except Exception as e:
         logging.error(f"ASIN silme hatası: {e}")
@@ -579,7 +583,7 @@ def delete_asin(current_user_id, user_subscription):
 def delete_non_favorited_asins(current_user_id, user_subscription):
     try:
         cursor = conn.cursor()
-        cursor.execute("""
+        cursor.execute(""" 
             DELETE FROM User_Temporary_Data
             WHERE user_id = ? AND is_favorited = 0
         """, (current_user_id,))
@@ -603,7 +607,7 @@ def update_favorited_asin(current_user_id, user_subscription):
             return jsonify({'message': 'ASIN eksik'}), 400
 
         cursor = conn.cursor()
-        cursor.execute("""
+        cursor.execute(""" 
             UPDATE User_Temporary_Data 
             SET is_favorited = ? 
             WHERE user_id = ? AND asin = ?
@@ -653,7 +657,7 @@ def get_favorite_asins(current_user_id, *args, **kwargs):
 
     except Exception as e:
         logging.error(f"Veritabanı hatası: {e}")
-        return jsonify({'message': 'Favori ASIN\'ler alınırken hata oluştu.'}), 500
+        return jsonify({'message': 'Favori ASIN\'ler alınırken hata oluştu.'}), 500
 
 @app.route('/upload_excel_files', methods=['POST'])
 @token_required
@@ -663,9 +667,8 @@ def upload_excel_files(current_user_id, user_subscription):
 
     file1 = request.files['file1']
     file2 = request.files['file2']
-    conversion_rate = request.form.get('conversion_rate')  # conversion_rate frontend'den alınır
+    conversion_rate = request.form.get('conversion_rate')
 
-    # Eğer conversion_rate None ya da geçersizse, hata döndür
     if conversion_rate is None:
         return jsonify({'message': 'Dönüşüm oranı eksik.'}), 400
 
@@ -694,13 +697,12 @@ def upload_excel_files(current_user_id, user_subscription):
 
     try:
         cursor = conn.cursor()
-        cursor.execute("""
+        cursor.execute(""" 
             DELETE FROM User_Temporary_Data
             WHERE user_id = ? AND is_favorited = 0
         """, (current_user_id,))
         conn.commit()
 
-        # process_files fonksiyonuna conversion_rate ekleniyor
         processed_data = process2.process_files(file_path1, file_path2, conversion_rate)
         os.remove(file_path1)
         os.remove(file_path2)
@@ -783,7 +785,6 @@ def upload_excel_files(current_user_id, user_subscription):
     except Exception as e:
         logging.error(f"Dosya işleme hatası: {e}")
         return jsonify({'message': f'Dosya işleme sırasında hata oluştu: {e}'}), 500
-
 
 if __name__ == '__main__':
     PORT = 5000
