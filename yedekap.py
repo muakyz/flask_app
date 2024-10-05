@@ -51,6 +51,7 @@ def get_connection():
     except pyodbc.Error as e:
         logging.error(f"Veritabanı bağlantı hatası: {e}")
         raise
+
 try:
     conn = get_connection()
     cursor = conn.cursor()
@@ -299,6 +300,26 @@ def reset_password():
         logging.error(f"Reset password error: {e}")
         return jsonify({'message': 'Password reset failed.'}), 500
 
+@app.route('/get_user_info', methods=['GET'])
+@token_required
+def get_user_info(current_user_id, user_subscription):
+    try:
+        cursor = get_connection().cursor()
+        cursor.execute("SELECT username, email, gsm FROM Users WHERE user_id = ?", (current_user_id,))
+        user_info = cursor.fetchone()
+
+        if user_info:
+            return jsonify({
+                'username': user_info.username,
+                'email': user_info.email,
+                'gsm': user_info.gsm
+            }), 200
+        else:
+            return jsonify({'message': 'User not found.'}), 404
+    except Exception as e:
+        logging.error(f"User info retrieval error: {e}")
+        return jsonify({'message': 'User info retrieval failed.'}), 500
+
 @app.route('/get_sellerids_for_user', methods=['GET'])
 @token_required
 @subscription_required(1)
@@ -314,54 +335,19 @@ def get_sellerids_for_user(current_user_id):
         logging.error(f"Veri çekme hatası: {e}")
         return jsonify({'message': 'Veri çekme sırasında bir hata oluştu.'}), 500
 
-
-@app.route('/get_user_info', methods=['GET'])
-@token_required
-@subscription_required(1)
-def get_user_info(current_user_id):
-    try:
-        cursor = conn.cursor()
-        query = "SELECT * FROM users WHERE user_id = ?"
-        cursor.execute(query, (current_user_id,))
-        row = cursor.fetchone()  # Tek bir kullanıcı döneceği için fetchone kullanıyoruz.
-
-        if row:
-            user_info = {
-                'user_id': row.user_id,
-                'username': row.username,
-                'email': row.email,
-                'password': row.password,
-                'gsm': row.gsm,
-                'session_id': row.session_id,
-                'subscription_type': row.subscription_type
-            }
-            return jsonify({'user_info': user_info}), 200
-        else:
-            return jsonify({'message': 'Kullanıcı bulunamadı.'}), 404
-
-    except Exception as e:
-        logging.error(f"Veri çekme hatası: {e}")
-        return jsonify({'message': 'Veri çekme sırasında bir hata oluştu.'}), 500
-
-
-
-
-
-
-
-
-
-
 @app.route('/add_seller_id_to_tracking', methods=['POST'])
 @token_required
 @subscription_required(1)
 def add_seller_id_to_tracking(current_user_id):
     data = request.get_json()
     seller_ids = data.get('seller_id')
+
     if not seller_ids or not isinstance(seller_ids, list):
         return jsonify({'message': 'Seller ID listesi gerekli ve liste formatında olmalı'}), 400
+
     try:
         cursor = conn.cursor()
+
         for seller_id in seller_ids:
             check_userid_sellerid_query = """
                 SELECT 1 FROM Userid_Sellerid WHERE user_id = ? AND seller_id = ?
@@ -419,11 +405,13 @@ def delete_seller_id_from_tracking(current_user_id):
             """
             cursor.execute(check_seller_in_userid_sellerid, (seller_id,))
             result = cursor.fetchone()
+
             if not result:
                 delete_query_sellerids = """
                     DELETE FROM Sellerids WHERE seller_id = ?
                 """
                 cursor.execute(delete_query_sellerids, (seller_id,))
+
         conn.commit()
         return jsonify({'message': 'Seller ID\'ler başarıyla silindi'}), 200
 
@@ -672,6 +660,10 @@ def get_favorite_asins(current_user_id, *args, **kwargs):
         logging.error(f"Veritabanı hatası: {e}")
         return jsonify({'message': 'Favori ASIN\'ler alınırken hata oluştu.'}), 500
 
+
+
+
+
 @app.route('/upload_excel_files', methods=['POST'])
 @token_required
 def upload_excel_files(current_user_id, user_subscription):
@@ -798,6 +790,21 @@ def upload_excel_files(current_user_id, user_subscription):
     except Exception as e:
         logging.error(f"Dosya işleme hatası: {e}")
         return jsonify({'message': f'Dosya işleme sırasında hata oluştu: {e}'}), 500
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 if __name__ == '__main__':
     PORT = 5000
