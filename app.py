@@ -827,6 +827,65 @@ def upload_excel_files(current_user_id, user_subscription):
         logging.error(f"Dosya işleme hatası: {e}")
         return jsonify({'message': f'Dosya işleme sırasında hata oluştu: {e}'}), 500
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+    
 if __name__ == '__main__':
     PORT = 5000
     app.run(host='0.0.0.0', port=PORT, debug=True)
