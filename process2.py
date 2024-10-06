@@ -32,4 +32,6 @@ def process_files(source_file_path, target_file_path, conversion_rate):
                              'Buy Box Eligible Offer Count: New FBA_target',
                              'Amazon: Availability of the Amazon offer_target']]
     
+    result_df = result_df[result_df['roi'] > 20]
+    
     return result_df
