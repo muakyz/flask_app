@@ -98,6 +98,7 @@ def token_required(f):
         if auth_header and len(auth_header.split()) == 2:
             token = auth_header.split()[1]
         if not token:
+            logging.warning("Token bulunamadı.")
             return jsonify({'message': 'Token gereklidir.'}), 401
         try:
             data = jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGORITHM])
@@ -105,28 +106,37 @@ def token_required(f):
             token_session_id = data.get('session_id')
             token_subscription_type = data.get('subscription_type')
 
+            logging.info(f"Token verileri: user_id={current_user_id}, session_id={token_session_id}, subscription_type={token_subscription_type}")
+
+            conn = get_connection()
             cursor = conn.cursor()
             query = "SELECT session_id, subscription_type FROM Users WHERE user_id = ?"
             cursor.execute(query, (current_user_id,))
             user = cursor.fetchone()
+            conn.close()
 
             if not user:
+                logging.warning(f"Kullanıcı bulunamadı: user_id={current_user_id}")
                 return jsonify({'message': 'Kullanıcı bulunamadı.'}), 404
 
             db_session_id = user.session_id
             db_subscription_type = user.subscription_type
 
             if token_session_id != db_session_id:
+                logging.warning(f"Session ID uyuşmazlığı: token_session_id={token_session_id}, db_session_id={db_session_id}")
                 return jsonify({'message': 'Geçersiz veya sona ermiş token.'}), 401
 
-            if token_subscription_type < 1:  # Tüm endpointler için 1 numaralı abonelik yeterli
+            if db_subscription_type < 1:  
+                logging.warning(f"Yetersiz abonelik: subscription_type={db_subscription_type}")
                 return jsonify({'message': 'Abonelik bilgileriniz güncel değil.'}), 401
 
             return f(current_user_id, db_subscription_type, *args, **kwargs)
 
         except jwt.ExpiredSignatureError:
+            logging.warning("Token süresi doldu.")
             return jsonify({'message': 'Token süresi doldu.'}), 401
         except jwt.InvalidTokenError:
+            logging.warning("Geçersiz token.")
             return jsonify({'message': 'Geçersiz token.'}), 401
         except Exception as e:
             logging.error(f"Token doğrulama hatası: {e}")
@@ -323,8 +333,7 @@ def get_user_info(current_user_id):
         cursor = conn.cursor()
         query = "SELECT * FROM users WHERE user_id = ?"
         cursor.execute(query, (current_user_id,))
-        row = cursor.fetchone()  # Tek bir kullanıcı döneceği için fetchone kullanıyoruz.
-
+        row = cursor.fetchone() 
         if row:
             user_info = {
                 'user_id': row.user_id,
@@ -344,7 +353,26 @@ def get_user_info(current_user_id):
         return jsonify({'message': 'Veri çekme sırasında bir hata oluştu.'}), 500
 
 
+@app.route('/form_sender', methods=['POST'])
+def form_sender():
+    data = request.get_json()
+    subject = data.get('subject')
+    message = data.get('message')
 
+    if not subject or not message:
+        return jsonify({'success': False, 'message': 'Konu ve mesaj alanları gereklidir.'}), 400
+
+    recipient = 'support@waytbeta.xyz' 
+
+    try:
+        success, msg = send_email(recipient, subject, message)
+        if success:
+            return jsonify({'success': True, 'message': 'Mesajınız başarıyla gönderildi.'}), 200
+        else:
+            return jsonify({'success': False, 'message': msg}), 500
+    except Exception as e:
+        logging.error(f"Form gönderimi sırasında hata: {e}")
+        return jsonify({'success': False, 'message': 'Mesaj gönderimi sırasında bir hata oluştu.'}), 500
 
 
 
