@@ -38,4 +38,6 @@ def process_files(source_file_path, target_file_path, conversion_rate):
                 'Buy Box: Current_target', 'profit', 'roi']:
         result_df[col] = result_df[col].astype(float)
     
+        result_df = result_df[result_df['roi'] > 20]
+
     return result_df
