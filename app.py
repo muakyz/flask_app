@@ -737,7 +737,8 @@ def upload_excel_files(current_user_id, user_subscription):
                    buy_box_eligible_offer_count, 
                    amazon_availability_offer_target, 
                    roi, 
-                   is_favorited 
+                   is_favorited,
+                   Image  -- Image sütununu ekle
             FROM User_Temporary_Data 
             WHERE user_id = ? and is_favorited = '0'
         """, (current_user_id,))
@@ -755,7 +756,8 @@ def upload_excel_files(current_user_id, user_subscription):
                 'fba_seller_count': row[7],
                 'is_amazon_selling': row[8],
                 'roi': row[9],
-                'is_favorited': row[10]
+                'is_favorited': row[10],
+                'image': row[11]  # Image sütununu veriye ekle
             } for row in rows
         ]
 

@@ -44,14 +44,14 @@ def process_files(source_file_path, target_file_path, conversion_rate, current_u
         logging.error(f"Excel dosyaları okunurken hata oluştu: {e}")
         raise
 
-
     rename_dict = {
-    'Buy Box: Current': 'Buy Box: Current',
-    'Buy Box: % Amazon 30 days': 'Buy Box: % Amazon 30 days',
-    'Buy Box Eligible Offer Count: New FBA': 'Buy Box Eligible Offer Counts: New FBA',
-    'FBA Fees:': 'FBA Pick&Pack Fee',
-    'Referral Fee based on current Buy Box price': 'Referral Fee based on current Buy Box price'
+        'Buy Box: Current': 'Buy Box: Current',
+        'Buy Box: % Amazon 30 days': 'Buy Box: % Amazon 30 days',
+        'Buy Box Eligible Offer Count: New FBA': 'Buy Box Eligible Offer Counts: New FBA',
+        'FBA Fees:': 'FBA Pick&Pack Fee',
+        'Referral Fee based on current Buy Box price': 'Referral Fee based on current Buy Box price'
     }
+
     try:
         df_source.rename(columns=rename_dict, inplace=True)
         df_target.rename(columns=rename_dict, inplace=True)
@@ -59,13 +59,14 @@ def process_files(source_file_path, target_file_path, conversion_rate, current_u
     except Exception as e:
         logging.error(f"Sütun isimlerini yeniden adlandırırken hata oluştu: {e}")
         raise
+
     float_columns = [
-    'Bought in past month',
-    'Buy Box: Current',
-    'Buy Box: % Amazon 30 days',
-    'Buy Box Eligible Offer Counts: New FBA',
-    'FBA Pick&Pack Fee',
-    'Referral Fee based on current Buy Box price'
+        'Bought in past month',
+        'Buy Box: Current',
+        'Buy Box: % Amazon 30 days',
+        'Buy Box Eligible Offer Counts: New FBA',
+        'FBA Pick&Pack Fee',
+        'Referral Fee based on current Buy Box price'
     ]
 
     try:
@@ -76,8 +77,6 @@ def process_files(source_file_path, target_file_path, conversion_rate, current_u
     except Exception as e:
         logging.error(f"Sütunları float değerine çevirirken hata oluştu: {e}")
         raise
-
-
 
     df_source_filtered = df_source.dropna(subset=['Buy Box: Current'])
     df_target_filtered = df_target.dropna(subset=['Buy Box: Current'])
@@ -105,6 +104,10 @@ def process_files(source_file_path, target_file_path, conversion_rate, current_u
     merged_df.fillna(0, inplace=True)
     merged_df = merged_df.infer_objects()
 
+    # Her ASIN için target'taki Image linkini al
+    target_images = df_target_filtered.set_index('ASIN')['Image'].to_dict()
+    merged_df['Image'] = merged_df['ASIN'].map(target_images)
+
     result_df = merged_df[['ASIN', 
                            'Buy Box: Current_source', 
                            'Buy Box: Current_source_converted',  
@@ -114,7 +117,8 @@ def process_files(source_file_path, target_file_path, conversion_rate, current_u
                            'Bought in past month_target', 
                            'Buy Box: % Amazon 30 days_target',
                            'Buy Box Eligible Offer Counts: New FBA_target',
-                           'Amazon: Availability of the Amazon offer_target']]
+                           'Amazon: Availability of the Amazon offer_target',
+                           'Image']]
 
     numeric_columns = ['Buy Box: Current_source', 'Buy Box: Current_source_converted', 
                        'Buy Box: Current_target', 'profit', 'roi']
@@ -142,7 +146,7 @@ def process_files(source_file_path, target_file_path, conversion_rate, current_u
 
             for _, row in result_df.iterrows():
                 if row['ASIN'] not in existing_asins:
-                    insert_data.append((
+                    insert_data.append(( 
                         current_user_id,
                         row['ASIN'],
                         row['profit'],
@@ -154,10 +158,11 @@ def process_files(source_file_path, target_file_path, conversion_rate, current_u
                         row['Buy Box Eligible Offer Counts: New FBA_target'],
                         row['Amazon: Availability of the Amazon offer_target'],
                         row['roi'],
-                        0
+                        0,
+                        row['Image']
                     ))
                 else:
-                    update_data.append((
+                    update_data.append(( 
                         row['profit'],
                         row['Buy Box: Current_source'],
                         row['Buy Box: Current_source_converted'],
@@ -169,6 +174,7 @@ def process_files(source_file_path, target_file_path, conversion_rate, current_u
                         row['roi'],
                         current_user_id,
                         row['ASIN']
+                        
                     ))
 
             logging.info(f"Yeni eklenmesi gereken satır sayısı: {len(insert_data)}")
@@ -185,8 +191,9 @@ def process_files(source_file_path, target_file_path, conversion_rate, current_u
                         buy_box_eligible_offer_count, 
                         amazon_availability_offer_target,
                         roi,
-                        is_favorited
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) 
+                        is_favorited,
+                        Image
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) 
                 """
                 cursor.executemany(insert_query, insert_data)
 
