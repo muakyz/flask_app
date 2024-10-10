@@ -16,6 +16,7 @@ import uuid
 from werkzeug.utils import secure_filename
 import pandas as pd
 import process2
+import process3
 
 load_dotenv()
 
@@ -700,6 +701,11 @@ def get_favorite_asins(current_user_id, *args, **kwargs):
         logging.error(f"Veritabanı hatası: {e}")
         return jsonify({'message': 'Favori ASIN\'ler alınırken hata oluştu.'}), 500
 
+
+
+
+
+
 @app.route('/upload_excel_files', methods=['POST'])
 @token_required
 def upload_excel_files(current_user_id, user_subscription):
@@ -721,170 +727,70 @@ def upload_excel_files(current_user_id, user_subscription):
     if file1.filename == '' or file2.filename == '':
         return jsonify({'message': 'Dosya adı boş'}), 400
 
-    if not (file1.filename.endswith('.xlsx') or file1.filename.endswith('.xls')):
+    allowed_extensions = {'.xlsx', '.xls', '.csv'}
+    if not any(file1.filename.endswith(ext) for ext in allowed_extensions):
         return jsonify({'message': 'Geçersiz dosya türü. Sadece .xlsx ve .xls dosyalarına izin verilir.'}), 400
 
-    if not (file2.filename.endswith('.xlsx') or file2.filename.endswith('.xls')):
+    if not any(file2.filename.endswith(ext) for ext in allowed_extensions):
         return jsonify({'message': 'Geçersiz dosya türü. Sadece .xlsx ve .xls dosyalarına izin verilir.'}), 400
 
     filename1 = secure_filename(file1.filename)
     filename2 = secure_filename(file2.filename)
 
-    file_path1 = os.path.join(app.config['UPLOAD_FOLDER'], filename1)
-    file_path2 = os.path.join(app.config['UPLOAD_FOLDER'], filename2)
+    user_folder = os.path.join(app.config['UPLOAD_FOLDER'], str(current_user_id))
+    os.makedirs(user_folder, exist_ok=True)
+
+    file_path1 = os.path.join(user_folder, filename1)
+    file_path2 = os.path.join(user_folder, filename2)
 
     file1.save(file_path1)
     file2.save(file_path2)
 
     try:
-        cursor = conn.cursor()
-        cursor.execute(""" 
-            DELETE FROM User_Temporary_Data
-            WHERE user_id = ? AND is_favorited = 0
-        """, (current_user_id,))
-        conn.commit()
-
-        processed_data = process2.process_files(file_path1, file_path2, conversion_rate)
+        process3.process_files(file_path1, file_path2, conversion_rate, current_user_id)
         os.remove(file_path1)
         os.remove(file_path2)
 
-        for index, row in processed_data.iterrows():
-            try:
-                cursor.execute(""" 
-                    SELECT is_favorited 
-                    FROM User_Temporary_Data 
-                    WHERE user_id = ? AND asin = ? 
-                """, (current_user_id, row['ASIN']))
+        conn = get_connection()
+        cursor = conn.cursor()
+        cursor.execute("""
+            SELECT asin, profit, buy_box_current_source, 
+                   buy_box_current_source_converted, 
+                   buy_box_current_target, 
+                   bought_in_past_month_target, 
+                   buy_box_amazon_30_days_target, 
+                   buy_box_eligible_offer_count, 
+                   amazon_availability_offer_target, 
+                   roi, 
+                   is_favorited 
+            FROM User_Temporary_Data 
+            WHERE user_id = ? and is_favorited = '0'
+        """, (current_user_id,))
 
-                record = cursor.fetchone()
-                is_favorited = record[0] if record else 0 
+        rows = cursor.fetchall()
+        data = [
+            {
+                'asin': row[0],
+                'profit': row[1],
+                'bb_source': row[2],
+                'bb_source_converted': row[3],
+                'bb_target': row[4],
+                'sold_target': row[5],
+                'bb_amazon_percentage': row[6],
+                'fba_seller_count': row[7],
+                'is_amazon_selling': row[8],
+                'roi': row[9],
+                'is_favorited': row[10]
+            } for row in rows
+        ]
 
-                if record:
-                    cursor.execute(""" 
-                        UPDATE User_Temporary_Data 
-                        SET profit = ?, buy_box_current_source = ?, 
-                            buy_box_current_target = ?, 
-                            bought_in_past_month_target = ?, 
-                            buy_box_amazon_30_days_target = ?, 
-                            buy_box_eligible_offer_count = ?, 
-                            amazon_availability_offer_target = ?, 
-                            roi = ?, 
-                            buy_box_current_source_converted = ?  
-                        WHERE user_id = ? AND asin = ? 
-                    """, (row['profit'], row['Buy Box: Current_source'], 
-                          row['Buy Box: Current_target'], 
-                          row['Bought in past month_target'], 
-                          row['Buy Box: % Amazon 30 days_target'], 
-                          row['Buy Box Eligible Offer Count: New FBA_target'], 
-                          row['Amazon: Availability of the Amazon offer_target'], 
-                          row['roi'],  
-                          row['Buy Box: Current_source_converted'],  
-                          current_user_id, row['ASIN']))
-                else:
-                    cursor.execute(""" 
-                        INSERT INTO User_Temporary_Data (user_id, asin, profit, 
-                            buy_box_current_source, buy_box_current_target, 
-                            bought_in_past_month_target, 
-                            buy_box_amazon_30_days_target, 
-                            buy_box_eligible_offer_count, 
-                            amazon_availability_offer_target, 
-                            roi, 
-                            buy_box_current_source_converted,
-                            is_favorited)
-                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) 
-                    """, (current_user_id, row['ASIN'], row['profit'],  
-                          row['Buy Box: Current_source'], row['Buy Box: Current_target'], 
-                          row['Bought in past month_target'], 
-                          row['Buy Box: % Amazon 30 days_target'], 
-                          row['Buy Box Eligible Offer Count: New FBA_target'], 
-                          row['Amazon: Availability of the Amazon offer_target'],
-                          row['roi'],
-                          row['Buy Box: Current_source_converted'],
-                          0))  
-                    
-            except Exception as sql_error:
-                logging.error(f"SQL Error: {sql_error}")
-                return jsonify({'message': f'Veritabanı hatası: {sql_error}'}), 500
-        conn.commit()
+        cursor.close()
+        conn.close()
 
-        data = []
-        for index, row in processed_data.iterrows():
-            data.append({
-                'asin': row['ASIN'],
-                'profit': row['profit'],
-                'bb_source': row['Buy Box: Current_source'],
-                'bb_source_converted': row['Buy Box: Current_source_converted'],
-                'bb_target': row['Buy Box: Current_target'],
-                'sold_target': row['Bought in past month_target'],
-                'bb_amazon_percentage': row['Buy Box: % Amazon 30 days_target'],
-                'fba_seller_count': row['Buy Box Eligible Offer Count: New FBA_target'],
-                'is_amazon_selling': row['Amazon: Availability of the Amazon offer_target'],
-                'roi': row['roi'],
-                'is_favorited': is_favorited  
-            })
         return jsonify(data), 200
     except Exception as e:
         logging.error(f"Dosya işleme hatası: {e}")
         return jsonify({'message': f'Dosya işleme sırasında hata oluştu: {e}'}), 500
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
     
 if __name__ == '__main__':
     PORT = 5000
