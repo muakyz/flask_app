@@ -674,9 +674,10 @@ def get_favorite_asins(current_user_id, *args, **kwargs):
         query = """
             SELECT 
                 asin AS "ASIN", 
-                amazon_availability_offer_target AS "Is Amazon Offer Exist?", 
+                amazon_availability_offer_target AS "Is Amazon Offer Exist?",
                 buy_box_current_source AS "Cost", 
-                buy_box_current_target AS "BuyBox Price", 
+                buy_box_current_target AS "BuyBox Price",
+                Image, 
                 profit AS "PROFIT", 
                 bought_in_past_month_target AS "Past Month Sold", 
                 buy_box_eligible_offer_count AS "Total Sellers(FBA)", 
