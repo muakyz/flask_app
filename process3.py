@@ -182,6 +182,7 @@ def process_files(source_file_path, target_file_path, conversion_rate, current_u
             update_data = []
 
             for _, row in result_df.iterrows():
+                currency_info = f"{source_currency.upper()}/{target_currency.upper()}"  # Kaynak ve hedef para birimlerini yazıyoruz
                 if row['ASIN'] not in existing_asins:
                     insert_data.append(( 
                         current_user_id,
@@ -196,7 +197,8 @@ def process_files(source_file_path, target_file_path, conversion_rate, current_u
                         row['Amazon: Availability of the Amazon offer_target'],
                         row['roi'],
                         0,
-                        row['Image']
+                        row['Image'],
+                        currency_info  # Kaynak ve hedef para birimi ekleniyor
                     ))
                 else:
                     update_data.append(( 
@@ -209,6 +211,7 @@ def process_files(source_file_path, target_file_path, conversion_rate, current_u
                         row['Buy Box Eligible Offer Counts: New FBA_target'],
                         row['Amazon: Availability of the Amazon offer_target'],
                         row['roi'],
+                        currency_info,  # Güncellenen yeni sütun
                         current_user_id,
                         row['ASIN']
                     ))
@@ -228,8 +231,9 @@ def process_files(source_file_path, target_file_path, conversion_rate, current_u
                         amazon_availability_offer_target,
                         roi,
                         is_favorited,
-                        Image
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) 
+                        Image,
+                        currency_info  -- Eklenen yeni sütun
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) 
                 """
                 cursor.executemany(insert_query, insert_data)
 
@@ -244,7 +248,8 @@ def process_files(source_file_path, target_file_path, conversion_rate, current_u
                         buy_box_amazon_30_days_target = ?, 
                         buy_box_eligible_offer_count = ?, 
                         amazon_availability_offer_target = ?, 
-                        roi = ?
+                        roi = ?,
+                        currency_info = ?  -- Güncellenen yeni sütun
                     WHERE user_id = ? AND asin = ?
                 """
                 cursor.executemany(update_query, update_data)
