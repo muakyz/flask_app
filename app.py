@@ -823,7 +823,44 @@ def upload_files(current_user_id, user_subscription):
         logging.error(f"Dosya işleme hatası: {e}")
         return jsonify({'message': f'Dosya işlenirken hata oluştu: {e}'}), 500
 
-    
+
+@app.route('/check_favorited_count', methods=['GET'])
+@token_required
+@subscription_required(1)
+def check_favorited_count(current_user_id, *args, **kwargs):
+    try:
+        cursor = conn.cursor()
+        query = """
+            SELECT 
+                u.subscription_type,
+                COUNT(ud.is_favorited) AS favorited_count
+            FROM Users u
+            LEFT JOIN User_Temporary_Data ud ON u.user_id = ud.user_id AND ud.is_favorited = 1
+            WHERE u.user_id = ?
+            GROUP BY u.subscription_type
+        """
+        cursor.execute(query, (current_user_id,))
+        result = cursor.fetchone()
+
+        if result:
+            subscription_type, favorited_count = result
+            return jsonify({
+                'user_id': current_user_id,
+                'subscription_type': subscription_type,
+                'favorited_count': favorited_count
+            }), 200
+        else:
+            return jsonify({'message': 'User not found.'}), 404
+
+    except Exception as e:
+        logging.error(f"Database error: {e}")
+        return jsonify({'message': 'Error checking favorite count.'}), 500
+
+
+
+
+
+
 if __name__ == '__main__':
     PORT = 5000
     app.run(host='0.0.0.0', port=PORT, debug=True)
