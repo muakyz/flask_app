@@ -11,6 +11,9 @@ logging.basicConfig(level=logging.INFO, format='%(levelname)s:%(message)s')
 
 pd.set_option('future.no_silent_downcasting', True)
 warnings.filterwarnings("ignore", category=UserWarning, module="openpyxl")
+warnings.filterwarnings("ignore", category=pd.errors.PerformanceWarning)
+warnings.filterwarnings("ignore", category=pd.errors.SettingWithCopyWarning)
+warnings.filterwarnings("ignore", category=pd.errors.DtypeWarning)
 
 def get_connection():
     server = os.getenv('DB_SERVER', '45.155.159.142,1433')
