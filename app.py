@@ -709,12 +709,9 @@ def get_favorite_asins(current_user_id, *args, **kwargs):
 @app.route('/upload_excel_files', methods=['POST'])
 @token_required
 def upload_excel_files(current_user_id, user_subscription):
-    if 'file1' not in request.files or 'file2' not in request.files:
-        return jsonify({'message': 'Dosya eksik'}), 400
-
-    file1 = request.files['file1']
-    file2 = request.files['file2']
-    conversion_rate = request.form.get('conversion_rate')
+    file_path1 = request.json.get('file_path1')
+    file_path2 = request.json.get('file_path2')
+    conversion_rate = request.json.get('conversion_rate')
 
     if conversion_rate is None:
         return jsonify({'message': 'Dönüşüm oranı eksik.'}), 400
@@ -723,28 +720,6 @@ def upload_excel_files(current_user_id, user_subscription):
         conversion_rate = float(conversion_rate)
     except ValueError:
         return jsonify({'message': 'Geçersiz dönüşüm oranı.'}), 400
-
-    if file1.filename == '' or file2.filename == '':
-        return jsonify({'message': 'Dosya adı boş'}), 400
-
-    allowed_extensions = {'.xlsx', '.xls', '.csv'}
-    if not any(file1.filename.endswith(ext) for ext in allowed_extensions):
-        return jsonify({'message': 'Geçersiz dosya türü. Sadece .xlsx ve .xls dosyalarına izin verilir.'}), 400
-
-    if not any(file2.filename.endswith(ext) for ext in allowed_extensions):
-        return jsonify({'message': 'Geçersiz dosya türü. Sadece .xlsx ve .xls dosyalarına izin verilir.'}), 400
-
-    filename1 = secure_filename(file1.filename)
-    filename2 = secure_filename(file2.filename)
-
-    user_folder = os.path.join(app.config['UPLOAD_FOLDER'], str(current_user_id))
-    os.makedirs(user_folder, exist_ok=True)
-
-    file_path1 = os.path.join(user_folder, filename1)
-    file_path2 = os.path.join(user_folder, filename2)
-
-    file1.save(file_path1)
-    file2.save(file_path2)
 
     try:
         process3.process_files(file_path1, file_path2, conversion_rate, current_user_id)
@@ -791,6 +766,43 @@ def upload_excel_files(current_user_id, user_subscription):
     except Exception as e:
         logging.error(f"Dosya işleme hatası: {e}")
         return jsonify({'message': f'Dosya işleme sırasında hata oluştu: {e}'}), 500
+
+
+
+
+@app.route('/upload_files', methods=['POST'])
+@token_required
+def upload_files(current_user_id, user_subscription):
+    if 'file1' not in request.files or 'file2' not in request.files:
+        return jsonify({'message': 'Dosya eksik'}), 400
+
+    file1 = request.files['file1']
+    file2 = request.files['file2']
+
+    if file1.filename == '' or file2.filename == '':
+        return jsonify({'message': 'Dosya adı boş'}), 400
+
+    allowed_extensions = {'.xlsx', '.xls', '.csv'}
+    if not any(file1.filename.endswith(ext) for ext in allowed_extensions):
+        return jsonify({'message': 'Geçersiz dosya türü. Sadece .xlsx ve .xls dosyalarına izin verilir.'}), 400
+
+    if not any(file2.filename.endswith(ext) for ext in allowed_extensions):
+        return jsonify({'message': 'Geçersiz dosya türü. Sadece .xlsx ve .xls dosyalarına izin verilir.'}), 400
+
+    filename1 = secure_filename(file1.filename)
+    filename2 = secure_filename(file2.filename)
+
+    user_folder = os.path.join(app.config['UPLOAD_FOLDER'], str(current_user_id))
+    os.makedirs(user_folder, exist_ok=True)
+
+    file_path1 = os.path.join(user_folder, filename1)
+    file_path2 = os.path.join(user_folder, filename2)
+
+    file1.save(file_path1)
+    file2.save(file_path2)
+
+    return jsonify({'message': 'Dosyalar başarıyla yüklendi.', 'file_path1': file_path1, 'file_path2': file_path2}), 200
+
     
 if __name__ == '__main__':
     PORT = 5000
