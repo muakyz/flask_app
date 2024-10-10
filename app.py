@@ -131,6 +131,9 @@ def token_required(f):
                 logging.warning(f"Yetersiz abonelik: subscription_type={db_subscription_type}")
                 return jsonify({'message': 'Abonelik bilgileriniz güncel değil.'}), 401
 
+            new_token = generate_jwt(current_user_id, data['email'], data['username'], token_session_id, db_subscription_type)
+           
+
             return f(current_user_id, db_subscription_type, *args, **kwargs)
 
         except jwt.ExpiredSignatureError:
@@ -143,6 +146,7 @@ def token_required(f):
             logging.error(f"Token doğrulama hatası: {e}")
             return jsonify({'message': 'Token doğrulama sırasında hata oluştu.'}), 500
     return decorated
+
 
 def subscription_required(required_level):
     def decorator(f):
@@ -783,7 +787,6 @@ def upload_excel_files(current_user_id, user_subscription):
     except Exception as e:
         logging.error(f"Dosya işleme hatası: {e}")
         return jsonify({'message': f'Dosya işleme sırasında hata oluştu: {e}'}), 500
-
 
 
 
