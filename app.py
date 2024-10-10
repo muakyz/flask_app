@@ -15,7 +15,7 @@ from datetime import datetime, timedelta, timezone
 import uuid
 from werkzeug.utils import secure_filename
 import pandas as pd
-import process2
+import process4
 import process3
 
 load_dotenv()
@@ -427,7 +427,6 @@ def add_seller_id_to_tracking(current_user_id):
 
 @app.route('/delete_seller_id_from_tracking', methods=['DELETE'])
 @token_required
-@subscription_required(1)
 def delete_seller_id_from_tracking(current_user_id):
     data = request.get_json()
     seller_ids = data.get('seller_id')
@@ -620,22 +619,26 @@ def delete_asin(current_user_id, user_subscription):
         logging.error(f"ASIN silme hatası: {e}")
         return jsonify({'message': f'ASIN silme sırasında hata oluştu: {e}'}), 500
 
-@app.route('/delete_non_favorited_asins', methods=['POST'])
+# app.py
+@app.route('/delete_non_favorited_asin', methods=['POST'])
 @token_required
-def delete_non_favorited_asins(current_user_id, user_subscription):
+def delete_non_favorited_asin(current_user_id, user_subscription):
     try:
+        conn = get_connection()
         cursor = conn.cursor()
-        cursor.execute(""" 
+        delete_query = """
             DELETE FROM User_Temporary_Data
             WHERE user_id = ? AND is_favorited = 0
-        """, (current_user_id,))
+        """
+        cursor.execute(delete_query, (current_user_id,))
         conn.commit()
-
-        return jsonify({'message': 'Favorilenmemiş ASIN\'ler başarıyla silindi.'}), 200
-
+        cursor.close()
+        conn.close()
+        return jsonify({'message': 'Favori olmayan ASIN\'ler başarıyla silindi.'}), 200
     except Exception as e:
         logging.error(f"ASIN silme hatası: {e}")
         return jsonify({'message': f'ASIN silme sırasında hata oluştu: {e}'}), 500
+
 
 @app.route('/update_favorited_asin', methods=['POST'])
 @token_required
@@ -709,22 +712,34 @@ def get_favorite_asins(current_user_id, *args, **kwargs):
 @app.route('/upload_excel_files', methods=['POST'])
 @token_required
 def upload_excel_files(current_user_id, user_subscription):
-    file_path1 = request.json.get('file_path1')
-    file_path2 = request.json.get('file_path2')
-    conversion_rate = request.json.get('conversion_rate')
-
-    if conversion_rate is None:
-        return jsonify({'message': 'Dönüşüm oranı eksik.'}), 400
-
+    conversion_rate = request.json.get('conversion_rate', 0.75) 
+    user_folder = os.path.join(app.config['UPLOAD_FOLDER'], str(current_user_id))
+    
     try:
-        conversion_rate = float(conversion_rate)
-    except ValueError:
-        return jsonify({'message': 'Geçersiz dönüşüm oranı.'}), 400
+        source_extensions = ['.csv', '.xlsx', '.xls']
+        target_extensions = ['.csv', '.xlsx', '.xls']
+        
+        source_file = None
+        for ext in source_extensions:
+            potential_path = os.path.join(user_folder, 'source' + ext)
+            if os.path.exists(potential_path):
+                source_file = potential_path
+                break
 
-    try:
-        process3.process_files(file_path1, file_path2, conversion_rate, current_user_id)
-        os.remove(file_path1)
-        os.remove(file_path2)
+        target_file = None
+        for ext in target_extensions:
+            potential_path = os.path.join(user_folder, 'target' + ext)
+            if os.path.exists(potential_path):
+                target_file = potential_path
+                break
+
+        if not source_file or not target_file:
+            return jsonify({'message': 'Source veya target dosyası bulunamadı.'}), 400
+
+        result_df = process3.process_files(source_file, target_file, conversion_rate, current_user_id)
+        
+        os.remove(source_file)
+        os.remove(target_file)
 
         conn = get_connection()
         cursor = conn.cursor()
@@ -738,7 +753,7 @@ def upload_excel_files(current_user_id, user_subscription):
                    amazon_availability_offer_target, 
                    roi, 
                    is_favorited,
-                   Image  -- Image sütununu ekle
+                   Image
             FROM User_Temporary_Data 
             WHERE user_id = ? and is_favorited = '0'
         """, (current_user_id,))
@@ -757,7 +772,7 @@ def upload_excel_files(current_user_id, user_subscription):
                 'is_amazon_selling': row[8],
                 'roi': row[9],
                 'is_favorited': row[10],
-                'image': row[11]  # Image sütununu veriye ekle
+                'image': row[11]
             } for row in rows
         ]
 
@@ -771,39 +786,42 @@ def upload_excel_files(current_user_id, user_subscription):
 
 
 
-
 @app.route('/upload_files', methods=['POST'])
-@token_required
+@token_required 
 def upload_files(current_user_id, user_subscription):
-    if 'file1' not in request.files or 'file2' not in request.files:
-        return jsonify({'message': 'Dosya eksik'}), 400
+    if 'file' not in request.files or 'file_type' not in request.form:
+        return jsonify({'message': 'Dosya veya dosya tipi eksik'}), 400
 
-    file1 = request.files['file1']
-    file2 = request.files['file2']
+    file = request.files['file']
+    file_type = request.form['file_type']
 
-    if file1.filename == '' or file2.filename == '':
+    if file.filename == '':
         return jsonify({'message': 'Dosya adı boş'}), 400
 
     allowed_extensions = {'.xlsx', '.xls', '.csv'}
-    if not any(file1.filename.endswith(ext) for ext in allowed_extensions):
-        return jsonify({'message': 'Geçersiz dosya türü. Sadece .xlsx ve .xls dosyalarına izin verilir.'}), 400
+    if not any(file.filename.endswith(ext) for ext in allowed_extensions):
+        return jsonify({'message': 'Geçersiz dosya türü. Sadece .xlsx, .xls ve .csv dosyalarına izin verilir.'}), 400
 
-    if not any(file2.filename.endswith(ext) for ext in allowed_extensions):
-        return jsonify({'message': 'Geçersiz dosya türü. Sadece .xlsx ve .xls dosyalarına izin verilir.'}), 400
-
-    filename1 = secure_filename(file1.filename)
-    filename2 = secure_filename(file2.filename)
-
+    filename = secure_filename(file.filename)
     user_folder = os.path.join(app.config['UPLOAD_FOLDER'], str(current_user_id))
     os.makedirs(user_folder, exist_ok=True)
 
-    file_path1 = os.path.join(user_folder, filename1)
-    file_path2 = os.path.join(user_folder, filename2)
+    if file_type == 'source':
+        filename = 'source' + os.path.splitext(filename)[1]
+    elif file_type == 'target':
+        filename = 'target' + os.path.splitext(filename)[1]
+    else:
+        return jsonify({'message': 'Geçersiz dosya tipi.'}), 400
 
-    file1.save(file_path1)
-    file2.save(file_path2)
+    file_path = os.path.join(user_folder, filename)
+    file.save(file_path)
 
-    return jsonify({'message': 'Dosyalar başarıyla yüklendi.', 'file_path1': file_path1, 'file_path2': file_path2}), 200
+    try:
+        currency = process4.get_currency(file_path)
+        return jsonify({'message': 'Dosya başarıyla yüklendi.', 'currency': currency}), 200
+    except Exception as e:
+        logging.error(f"Dosya işleme hatası: {e}")
+        return jsonify({'message': f'Dosya işlenirken hata oluştu: {e}'}), 500
 
     
 if __name__ == '__main__':

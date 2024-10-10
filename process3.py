@@ -7,7 +7,6 @@ import os
 import time
 import datetime
 
-# Logging yapılandırması
 logging.basicConfig(level=logging.INFO, format='%(levelname)s:%(message)s')
 
 pd.set_option('future.no_silent_downcasting', True)
@@ -89,22 +88,57 @@ def process_files(source_file_path, target_file_path, conversion_rate, current_u
         logging.warning("Birleştirilmiş DataFrame boş. İşlem durduruluyor.")
         return pd.DataFrame()
 
+    exchange_rates = {
+        'usd': 1.0,    
+        'cad': 0.75,   
+        'gbp': 1.3    
+    }
+
+    source_locale = df_source['Locale'].str.lower().unique()
+    target_locale = df_target['Locale'].str.lower().unique()
+
+    def determine_currency(locales):
+        for locale in locales:
+            if 'ca' in locale:
+                return 'cad'
+            elif 'com' in locale:
+                return 'usd'
+            elif 'co.uk' in locale:
+                return 'gbp'
+        return 'usd'  
+
+    source_currency = determine_currency(source_locale)
+    target_currency = determine_currency(target_locale)
+
+    logging.info(f"Kaynak para birimi: {source_currency.upper()}")
+    logging.info(f"Hedef para birimi: {target_currency.upper()}")
+
+    try:
+        source_rate = exchange_rates[source_currency]
+        target_rate = exchange_rates[target_currency]
+        conversion_rate = source_rate / target_rate
+        logging.info(f"Dönüşüm oranı (Kaynak / Hedef): {conversion_rate}")
+    except KeyError as e:
+        logging.error(f"Tanımlanmamış para birimi: {e}")
+        raise
+
     merged_df['VAT on Fees'] = (merged_df['FBA Pick&Pack Fee_target'] + merged_df['Referral Fee based on current Buy Box price_target']) * 0.2
     merged_df['Buy Box: Current_source_converted'] = round(merged_df['Buy Box: Current_source'] * conversion_rate, 2)
+
     merged_df['profit'] = (
         merged_df['Buy Box: Current_target'] - 
         merged_df['FBA Pick&Pack Fee_target'] - 
         merged_df['Referral Fee based on current Buy Box price_target'] - 
-        merged_df['VAT on Fees'] -
-        (merged_df['Buy Box: Current_source'] * 0.75)
+        merged_df['VAT on Fees'] - 
+        merged_df['Buy Box: Current_source_converted']
     )
+
     merged_df['roi'] = round((merged_df['profit'] / merged_df['Buy Box: Current_source_converted']) * 100, 2)
 
     merged_df.replace([np.inf, -np.inf], np.nan, inplace=True)
     merged_df.fillna(0, inplace=True)
     merged_df = merged_df.infer_objects()
 
-    # Her ASIN için target'taki Image linkini al
     target_images = df_target_filtered.set_index('ASIN')['Image'].to_dict()
     merged_df['Image'] = merged_df['ASIN'].map(target_images)
 
@@ -174,7 +208,6 @@ def process_files(source_file_path, target_file_path, conversion_rate, current_u
                         row['roi'],
                         current_user_id,
                         row['ASIN']
-                        
                     ))
 
             logging.info(f"Yeni eklenmesi gereken satır sayısı: {len(insert_data)}")
@@ -234,7 +267,6 @@ def process_files(source_file_path, target_file_path, conversion_rate, current_u
     logging.info(f"Veritabanına yazma süresi: {db_duration:.2f} saniye" if 'db_duration' in locals() else "Veritabanına yazma süresi hesaplanamadı.")
     logging.info(f"Toplam geçen süre: {total_duration:.2f} saniye")
 
-    # Log dosyasına yazma
     central_log_path = os.path.join(os.path.dirname(os.path.dirname(source_file_path)), 'processing_log.txt')
     try:
         with open(central_log_path, 'a') as log_file:
@@ -242,5 +274,21 @@ def process_files(source_file_path, target_file_path, conversion_rate, current_u
             log_file.write(log_entry)
     except Exception as e:
         logging.error(f"Log dosyasına yazma hatası: {e}")
+
+    for locale in target_locale:
+        if 'ca' in locale:
+            logging.info("Hedef dosya birimi: CAD")
+        elif 'com' in locale:
+            logging.info("Hedef dosya birimi: USD")
+        elif 'co.uk' in locale:
+            logging.info("Hedef dosya birimi: GBP")
+
+    for locale in source_locale:
+        if 'ca' in locale:
+            logging.info("Kaynak dosya birimi: CAD")
+        elif 'com' in locale:
+            logging.info("Kaynak dosya birimi: USD")
+        elif 'co.uk' in locale:
+            logging.info("Kaynak dosya birimi: GBP")
 
     return result_df
