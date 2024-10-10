@@ -755,8 +755,8 @@ def upload_excel_files(current_user_id, user_subscription):
                    is_favorited,
                    Image
             FROM User_Temporary_Data 
-            WHERE user_id = ? and is_favorited = '0'
-        """, (current_user_id,))
+            WHERE user_id = ?
+        """, (current_user_id,))  # 'and is_favorited = '0'' kaldırıldı
 
         rows = cursor.fetchall()
         data = [
@@ -783,6 +783,9 @@ def upload_excel_files(current_user_id, user_subscription):
     except Exception as e:
         logging.error(f"Dosya işleme hatası: {e}")
         return jsonify({'message': f'Dosya işleme sırasında hata oluştu: {e}'}), 500
+
+
+
 
 
 
@@ -850,11 +853,11 @@ def check_favorited_count(current_user_id, *args, **kwargs):
                 'favorited_count': favorited_count
             }), 200
         else:
-            return jsonify({'message': 'User not found.'}), 404
+            return jsonify({'message': 'Kullanıcı bulunamadı.'}), 404
 
     except Exception as e:
-        logging.error(f"Database error: {e}")
-        return jsonify({'message': 'Error checking favorite count.'}), 500
+        logging.error(f"Veritabanı hatası: {e}")
+        return jsonify({'message': 'Favori sayısı kontrol edilirken hata oluştu.'}), 500
 
 
 
