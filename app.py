@@ -682,7 +682,8 @@ def get_favorite_asins(current_user_id, *args, **kwargs):
                 buy_box_eligible_offer_count AS "Total Sellers(FBA)", 
                 buy_box_amazon_30_days_target AS "Amazon BB %", 
                 roi AS "ROI %", 
-                is_favorited AS "Favori"
+                is_favorited AS "Favori",
+                currency_info AS "Currency Info"  -- New column added
             FROM User_Temporary_Data 
             WHERE user_id = ? 
               AND is_favorited = 1
@@ -703,8 +704,6 @@ def get_favorite_asins(current_user_id, *args, **kwargs):
     except Exception as e:
         logging.error(f"Veritabanı hatası: {e}")
         return jsonify({'message': 'Favori ASIN\'ler alınırken hata oluştu.'}), 500
-
-
 
 
 
