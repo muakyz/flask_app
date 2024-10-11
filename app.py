@@ -716,8 +716,8 @@ def upload_excel_files(current_user_id, user_subscription):
     user_folder = os.path.join(app.config['UPLOAD_FOLDER'], str(current_user_id))
     
     try:
-        source_extensions = ['.csv', '.xlsx', '.xls']
-        target_extensions = ['.csv', '.xlsx', '.xls']
+        source_extensions = ['.csv']
+        target_extensions = ['.csv']
         
         source_file = None
         for ext in source_extensions:
@@ -737,10 +737,6 @@ def upload_excel_files(current_user_id, user_subscription):
             return jsonify({'message': 'Source veya target dosyası bulunamadı.'}), 400
 
         result_df = process3.process_files(source_file, target_file, conversion_rate, current_user_id)
-        
-        os.remove(source_file)
-        os.remove(target_file)
-
         conn = get_connection()
         cursor = conn.cursor()
         cursor.execute("""
@@ -784,10 +780,24 @@ def upload_excel_files(current_user_id, user_subscription):
         logging.error(f"Dosya işleme hatası: {e}")
         return jsonify({'message': f'Dosya işleme sırasında hata oluştu: {e}'}), 500
 
-
 @app.route('/upload_files', methods=['POST'])
 @token_required 
 def upload_files(current_user_id, user_subscription):
+    action = request.form.get('action', 'upload')
+    user_folder = os.path.join(app.config['UPLOAD_FOLDER'], str(current_user_id))
+    os.makedirs(user_folder, exist_ok=True)
+
+    if action == 'delete':
+        file_type = request.form.get('file_type')
+        if file_type not in ['source', 'target']:
+            return jsonify({'message': 'Geçersiz dosya tipi.'}), 400
+        for ext in ['.xlsx', '.xls', '.csv']:
+            file_path = os.path.join(user_folder, file_type + ext)
+            if os.path.exists(file_path):
+                os.remove(file_path)
+                break
+        return jsonify({'message': f'{file_type} dosyası silindi.'}), 200
+
     if 'file' not in request.files or 'file_type' not in request.form:
         return jsonify({'message': 'Dosya veya dosya tipi eksik'}), 400
 
@@ -801,18 +811,15 @@ def upload_files(current_user_id, user_subscription):
     if not any(file.filename.endswith(ext) for ext in allowed_extensions):
         return jsonify({'message': 'Geçersiz dosya türü. Sadece .xlsx, .xls ve .csv dosyalarına izin verilir.'}), 400
 
-    filename = secure_filename(file.filename)
-    user_folder = os.path.join(app.config['UPLOAD_FOLDER'], str(current_user_id))
-    os.makedirs(user_folder, exist_ok=True)
-
-    if file_type == 'source':
-        filename = 'source' + os.path.splitext(filename)[1]
-    elif file_type == 'target':
-        filename = 'target' + os.path.splitext(filename)[1]
-    else:
+    if file_type not in ['source', 'target']:
         return jsonify({'message': 'Geçersiz dosya tipi.'}), 400
 
+    filename = secure_filename(file.filename)
+    extension = os.path.splitext(filename)[1]
+    filename = file_type + extension
     file_path = os.path.join(user_folder, filename)
+    if os.path.exists(file_path):
+        os.remove(file_path)
     file.save(file_path)
 
     try:
@@ -821,7 +828,6 @@ def upload_files(current_user_id, user_subscription):
     except Exception as e:
         logging.error(f"Dosya işleme hatası: {e}")
         return jsonify({'message': f'Dosya işlenirken hata oluştu: {e}'}), 500
-
 
 @app.route('/check_favorited_count', methods=['GET'])
 @token_required
