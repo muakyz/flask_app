@@ -383,14 +383,6 @@ def form_sender(current_user_id, db_subscription_type):
         logging.error(f"Form gönderimi sırasında hata: {e}")
         return jsonify({'success': False, 'message': 'Mesaj gönderimi sırasında bir hata oluştu.'}), 500
 
-
-
-
-
-
-
-
-
 @app.route('/add_seller_id_to_tracking', methods=['POST'])
 @token_required
 @subscription_required(1)
@@ -629,7 +621,7 @@ def delete_asin(current_user_id, user_subscription):
         logging.error(f"ASIN silme hatası: {e}")
         return jsonify({'message': f'ASIN silme sırasında hata oluştu: {e}'}), 500
 
-# app.py
+
 @app.route('/delete_non_favorited_asin', methods=['POST'])
 @token_required
 def delete_non_favorited_asin(current_user_id, user_subscription):
@@ -717,8 +709,6 @@ def get_favorite_asins(current_user_id, *args, **kwargs):
         return jsonify({'message': 'Favori ASIN\'ler alınırken hata oluştu.'}), 500
 
 
-
-
 @app.route('/upload_excel_files', methods=['POST'])
 @token_required
 def upload_excel_files(current_user_id, user_subscription):
@@ -766,7 +756,7 @@ def upload_excel_files(current_user_id, user_subscription):
                    Image
             FROM User_Temporary_Data 
             WHERE user_id = ?
-        """, (current_user_id,))  # 'and is_favorited = '0'' kaldırıldı
+        """, (current_user_id,))  
 
         rows = cursor.fetchall()
         data = [
@@ -793,9 +783,6 @@ def upload_excel_files(current_user_id, user_subscription):
     except Exception as e:
         logging.error(f"Dosya işleme hatası: {e}")
         return jsonify({'message': f'Dosya işleme sırasında hata oluştu: {e}'}), 500
-
-
-
 
 
 @app.route('/upload_files', methods=['POST'])
@@ -867,10 +854,6 @@ def check_favorited_count(current_user_id, *args, **kwargs):
     except Exception as e:
         logging.error(f"Veritabanı hatası: {e}")
         return jsonify({'message': 'Favori sayısı kontrol edilirken hata oluştu.'}), 500
-
-
-
-
 
 
 if __name__ == '__main__':
