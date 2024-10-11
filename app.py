@@ -359,7 +359,8 @@ def get_user_info(current_user_id):
 
 
 @app.route('/form_sender', methods=['POST'])
-def form_sender():
+@token_required
+def form_sender(current_user_id, db_subscription_type):
     data = request.get_json()
     subject = data.get('subject')
     message = data.get('message')
@@ -367,10 +368,13 @@ def form_sender():
     if not subject or not message:
         return jsonify({'success': False, 'message': 'Konu ve mesaj alanları gereklidir.'}), 400
 
-    recipient = 'support@waytbeta.xyz' 
+    recipient = 'support@waytbeta.xyz'
+
+    message_with_user_info = f"Mesajı gönderen ID ve Abone Tipi: {current_user_id, db_subscription_type}\n\n{message}"
+                            
 
     try:
-        success, msg = send_email(recipient, subject, message)
+        success, msg = send_email(recipient, subject, message_with_user_info)
         if success:
             return jsonify({'success': True, 'message': 'Mesajınız başarıyla gönderildi.'}), 200
         else:
@@ -378,6 +382,8 @@ def form_sender():
     except Exception as e:
         logging.error(f"Form gönderimi sırasında hata: {e}")
         return jsonify({'success': False, 'message': 'Mesaj gönderimi sırasında bir hata oluştu.'}), 500
+
+
 
 
 
