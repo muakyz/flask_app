@@ -1,42 +1,28 @@
 import pandas as pd
 import numpy as np
+import warnings
 import logging
 import os
-import pyodbc
+import time
+import datetime
 
-def get_connection():
-    server = os.getenv('DB_SERVER', '45.155.159.142,1433')
-    database = os.getenv('DB_DATABASE', 'AMAZINGO')
-    driver = os.getenv('DB_DRIVER', 'ODBC Driver 17 for SQL Server')
-    username = os.getenv('DB_USERNAME', 'remote2')
-    password = os.getenv('DB_PASSWORD', 'your_db_password')
-    connection_string = (
-        f'DRIVER={{{driver}}};'
-        f'SERVER={server};'
-        f'DATABASE={database};'
-        f'UID={username};'
-        f'PWD={password};'
-    )
+logging.basicConfig(level=logging.INFO, format='%(levelname)s:%(message)s')
+
+pd.set_option('mode.chained_assignment', None)
+warnings.filterwarnings("ignore", category=UserWarning)
+warnings.filterwarnings("ignore", category=pd.errors.PerformanceWarning)
+warnings.filterwarnings("ignore", category=pd.errors.DtypeWarning)
+
+def process_files_wls(txt_file_path, source_file_path, conversion_rate, current_user_id):
+    start_time = time.time()
+
     try:
-        return pyodbc.connect(connection_string)
-    except pyodbc.Error as e:
-        logging.error(f"Veritabanı bağlantı hatası: {e}")
-        raise
-
-def process_files_wls(source_file_path, target_file_path, conversion_rate, current_user_id):
-    try:
-        with open(source_file_path, 'r') as file:
-            selected_values = file.read().strip().split(',')
-
-        df_target = pd.read_csv(target_file_path)
-        logging.info("Dosyalar başarıyla okundu.")
+        df_source = pd.read_csv(txt_file_path, sep=',', header=None, names=['key', 'Buy Box: Current_source'])
+        df_target = pd.read_csv(source_file_path)
+        df_target.columns = df_target.columns.str.replace(' 🚚', '', regex=False)
     except Exception as e:
         logging.error(f"Dosyalar okunurken hata oluştu: {e}")
         raise
-
-    ean_column = 'Product Codes: EAN'
-    upc_column = 'Product Codes: UPC'
-    asin_column = 'ASIN'
 
     rename_dict = {
         'Buy Box: Current': 'Buy Box: Current',
@@ -45,6 +31,13 @@ def process_files_wls(source_file_path, target_file_path, conversion_rate, curre
         'FBA Fees:': 'FBA Pick&Pack Fee',
         'Referral Fee based on current Buy Box price': 'Referral Fee based on current Buy Box price'
     }
+
+    try:
+        df_target.rename(columns=rename_dict, inplace=True)
+        logging.info("Sütun isimleri başarıyla yeniden adlandırıldı.")
+    except Exception as e:
+        logging.error(f"Sütun isimlerini yeniden adlandırırken hata oluştu: {e}")
+        raise
 
     float_columns = [
         'Bought in past month',
@@ -56,70 +49,117 @@ def process_files_wls(source_file_path, target_file_path, conversion_rate, curre
     ]
 
     try:
-        df_target.columns = df_target.columns.str.replace(' 🚚', '', regex=False)
-        
         for col in float_columns:
-            if col in df_target.columns:
-                logging.info(f"{col} sütunu float'a dönüştürülüyor.")
-                df_target[col] = df_target[col].astype(str).str.extract('(\d+\.?\d*)')[0].astype(float)
-            else:
-                logging.warning(f"{col} sütunu hedef veri çerçevesinde bulunamadı.")
-                
-        df_target.rename(columns=rename_dict, inplace=True)
-        logging.info("Sütun isimleri başarıyla yeniden adlandırıldı.")
+            df_target[col] = df_target[col].astype(str).str.extract(r'(\d+\.?\d*)')[0].astype(float)
+        df_source['Buy Box: Current_source'] = df_source['Buy Box: Current_source'].astype(float)
+        logging.info("Belirtilen sütunlar başarıyla float değerine çevrildi.")
     except Exception as e:
-        logging.error(f"Sütunları yeniden adlandırırken veya float'a çevirirken hata oluştu: {e}")
+        logging.error(f"Sütunları float değerine çevirirken hata oluştu: {e}")
         raise
-
-    matched_rows_count = 0
-    for value in selected_values:
-        matched_rows = df_target[
-            (df_target[ean_column].astype(str).str.contains(value.strip(), na=False)) | 
-            (df_target[upc_column].astype(str).str.contains(value.strip(), na=False)) | 
-            (df_target[asin_column].astype(str).str.contains(value.strip(), na=False))
-        ]
-        matched_rows_count += matched_rows.shape[0]
-
-    logging.info(f"Eşleşen satır sayısı: {matched_rows_count}")
-
-    if matched_rows_count > 0:
-        logging.info("Eşleşen satırlar:")
-        for index, row in matched_rows.iterrows():
-            logging.info(row.to_dict())
 
     df_target_filtered = df_target.dropna(subset=['Buy Box: Current'])
 
-    df_target_filtered['profit'] = (
-        df_target_filtered['Buy Box: Current'] - 
-        df_target_filtered['FBA Pick&Pack Fee'] - 
-        df_target_filtered['Referral Fee based on current Buy Box price']
+    df_codes_melted = df_target_filtered[['ASIN', 'Product Codes: EAN', 'Product Codes: UPC']].melt(
+        id_vars=['ASIN'],
+        value_vars=['Product Codes: EAN', 'Product Codes: UPC', 'ASIN'],
+        var_name='code_type',
+        value_name='key'
+    ).dropna(subset=['key'])
+
+    df_codes_melted['key'] = df_codes_melted['key'].astype(str)
+
+    df_source['key'] = df_source['key'].astype(str)
+
+    merged_df = pd.merge(df_source, df_codes_melted, on='key', how='inner')
+
+    merged_df = pd.merge(merged_df, df_target_filtered, on='ASIN', how='inner', suffixes=('_source', '_target'))
+
+    logging.info(f"Eşleşen satır sayısı: {merged_df.shape[0]}")
+
+    if merged_df.empty:
+        logging.warning("Birleştirilmiş DataFrame boş. İşlem durduruluyor.")
+        return pd.DataFrame()
+
+    exchange_rates = {
+        'usd': 1.0,
+        'cad': 0.75,
+        'gbp': 1.3
+    }
+
+    source_currency = 'usd'
+    target_locale = merged_df['Locale'].str.lower().unique()
+
+    def determine_currency(locales):
+        for locale in locales:
+            if 'ca' in locale:
+                return 'cad'
+            elif 'co.uk' in locale:
+                return 'gbp'
+            elif 'com' in locale:
+                return 'usd'
+        return 'usd'
+
+    target_currency = determine_currency(target_locale)
+
+    logging.info(f"Kaynak para birimi: {source_currency.upper()}")
+    logging.info(f"Hedef para birimi: {target_currency.upper()}")
+
+    try:
+        source_rate = exchange_rates[source_currency]
+        target_rate = exchange_rates[target_currency]
+        conversion_rate = source_rate / target_rate
+        logging.info(f"Dönüşüm oranı (Kaynak / Hedef): {conversion_rate}")
+    except KeyError as e:
+        logging.error(f"Tanımlanmamış para birimi: {e}")
+        raise
+
+    merged_df['VAT on Fees'] = (merged_df['FBA Pick&Pack Fee'] + merged_df['Referral Fee based on current Buy Box price']) * 0.2
+    merged_df['Buy Box: Current_source_converted'] = round(merged_df['Buy Box: Current_source'] * conversion_rate, 2)
+
+    merged_df['profit'] = (
+        merged_df['Buy Box: Current'] -
+        merged_df['FBA Pick&Pack Fee'] -
+        merged_df['Referral Fee based on current Buy Box price'] -
+        merged_df['VAT on Fees'] -
+        merged_df['Buy Box: Current_source_converted']
     )
 
-    df_target_filtered['roi'] = round((df_target_filtered['profit'] / df_target_filtered['Buy Box: Current']) * 100, 2)
+    merged_df['roi'] = round((merged_df['profit'] / merged_df['Buy Box: Current_source_converted']) * 100, 2)
 
-  
-    result_list = []  
+    merged_df.replace([np.inf, -np.inf], np.nan, inplace=True)
+    merged_df.fillna(0, inplace=True)
+    merged_df = merged_df.infer_objects()
 
-    for _, row in df_target_filtered.iterrows():
-        product_info = {
-            "asin": row['ASIN'],
-            "bb_amazon_percentage": row.get('Buy Box: % Amazon 30 days', "0.0"),
-            "bb_source": row['Buy Box: Current'],
-            "bb_source_converted": row['Buy Box: Current'],  
-            "bb_target": row['Buy Box: Current'], 
-            "fba_seller_count": row.get('Buy Box Eligible Counts: New FBA', 0),
-            "image": row['Image'],
-            "is_amazon_selling": row.get('Amazon: Availability of the Amazon offer', "no Amazon offer exists"),
-            "is_favorited": row.get('is_favorited', False),  
-            "profit": row['profit'],
-            "roi": row['roi'],
-            "sold_target": row.get('Bought in past month', 0) 
-        }
+    merged_df['Image'] = merged_df['Image']
 
-        result_list.append(product_info) 
+    result_df = merged_df[['ASIN',
+                           'Buy Box: Current_source',
+                           'Buy Box: Current_source_converted',
+                           'Buy Box: Current',
+                           'profit',
+                           'roi',
+                           'Bought in past month',
+                           'Buy Box: % Amazon 30 days',
+                           'Buy Box Eligible Offer Counts: New FBA',
+                           'Amazon: Availability of the Amazon offer',
+                           'Image']]
 
-    if not result_list:
+    numeric_columns = ['Buy Box: Current_source', 'Buy Box: Current_source_converted',
+                       'Buy Box: Current', 'profit', 'roi']
+    for col in numeric_columns:
+        result_df[col] = pd.to_numeric(result_df[col], errors='coerce').fillna(0)
+
+    #result_df = result_df[result_df['roi'] > 30]
+
+    if result_df.empty:
         logging.warning("ROI filtresinden geçen hiçbir satır yok.")
-        return {'message': 'No results meet the ROI criteria.'}
+    else:
+        logging.info(f"ROI filtresinden geçen satır sayısı: {len(result_df)}")
 
-    return result_list  
+    end_time = time.time()
+
+    total_duration = end_time - start_time
+
+    logging.info(f"Toplam geçen süre: {total_duration:.2f} saniye")
+
+    return result_df.to_dict(orient='records')

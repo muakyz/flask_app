@@ -872,13 +872,13 @@ def process_wls_files(current_user_id, user_subscription):
     
     user_folder = os.path.join(app.config['UPLOAD_FOLDER'], str(current_user_id), 'wls')
     
-    source_file_path = os.path.join(user_folder, 'selected_columns.txt')
-    target_file_path = os.path.join(user_folder, 'wlskeepa.csv')
+    txt_file_path = os.path.join(user_folder, 'selected_columns.txt')
+    source_file_path = os.path.join(user_folder, 'wlskeepa.csv')
 
-    if not os.path.exists(source_file_path) or not os.path.exists(target_file_path):
+    if not os.path.exists(txt_file_path) or not os.path.exists(source_file_path):
         return jsonify({'message': 'Source veya target dosyası bulunamadı.'}), 400
 
-    result_json = process_files_wls(source_file_path, target_file_path, conversion_rate, current_user_id)
+    result_json = process_files_wls(txt_file_path, source_file_path, conversion_rate, current_user_id)
 
     return jsonify(result_json), 200
 
