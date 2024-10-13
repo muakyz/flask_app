@@ -738,13 +738,16 @@ def wls_upload_files(current_user_id, user_subscription):
 
         file.save(file_path)
 
+        if file_type == 'keepa':
+            currency = script_flags.get_currency(file_path)  
+            logging.info("Bayrak eşleştirmesi için para birimi alındı: %s", currency)
+
         logging.info("Dosya başarıyla yüklendi: %s", filename)
         return jsonify({'message': 'Dosya başarıyla yüklendi.'}), 200
 
     except Exception as e:
         logging.error("Dosya yükleme hatası: %s", e)
         return jsonify({'message': 'Dosya yüklenirken hata oluştu.'}), 500
-
 
 
 
