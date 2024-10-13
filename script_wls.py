@@ -4,7 +4,6 @@ import warnings
 import logging
 import os
 import time
-import datetime
 
 logging.basicConfig(level=logging.INFO, format='%(levelname)s:%(message)s')
 
@@ -80,12 +79,7 @@ def process_files_wls(txt_file_path, source_file_path, conversion_rate, current_
         logging.warning("Birleştirilmiş DataFrame boş. İşlem durduruluyor.")
         return pd.DataFrame()
 
-    exchange_rates = {
-        'usd': 1.0,
-        'cad': 0.75,
-        'gbp': 1.3
-    }
-
+    # Kaynak ve hedef para birimlerini belirleme
     source_currency = 'usd'
     target_locale = merged_df['Locale'].str.lower().unique()
 
@@ -104,14 +98,8 @@ def process_files_wls(txt_file_path, source_file_path, conversion_rate, current_
     logging.info(f"Kaynak para birimi: {source_currency.upper()}")
     logging.info(f"Hedef para birimi: {target_currency.upper()}")
 
-    try:
-        source_rate = exchange_rates[source_currency]
-        target_rate = exchange_rates[target_currency]
-        conversion_rate = source_rate / target_rate
-        logging.info(f"Dönüşüm oranı (Kaynak / Hedef): {conversion_rate}")
-    except KeyError as e:
-        logging.error(f"Tanımlanmamış para birimi: {e}")
-        raise
+    # Fonksiyona verilen conversion_rate değerini kullanıyoruz
+    logging.info(f"Kullanılan dönüşüm oranı: {conversion_rate}")
 
     merged_df['VAT on Fees'] = (merged_df['FBA Pick&Pack Fee'] + merged_df['Referral Fee based on current Buy Box price']) * 0.2
     merged_df['Buy Box: Current_source_converted'] = round(merged_df['Buy Box: Current_source'] * conversion_rate, 2)
@@ -130,8 +118,7 @@ def process_files_wls(txt_file_path, source_file_path, conversion_rate, current_
     merged_df.fillna(0, inplace=True)
     merged_df = merged_df.infer_objects()
 
-    merged_df['Image'] = merged_df['Image']
-
+    # Sonuç DataFrame'ine eşleşme bilgilerini ekliyoruz ve sütunları yeniden adlandırıyoruz
     result_df = merged_df[['ASIN',
                            'Buy Box: Current_source',
                            'Buy Box: Current_source_converted',
@@ -142,7 +129,9 @@ def process_files_wls(txt_file_path, source_file_path, conversion_rate, current_
                            'Buy Box: % Amazon 30 days',
                            'Buy Box Eligible Offer Counts: New FBA',
                            'Amazon: Availability of the Amazon offer',
-                           'Image']]
+                           'Image',
+                           'code_type',
+                           'key']].rename(columns={'code_type': 'matched_column', 'key': 'matched_value'})
 
     numeric_columns = ['Buy Box: Current_source', 'Buy Box: Current_source_converted',
                        'Buy Box: Current', 'profit', 'roi']
