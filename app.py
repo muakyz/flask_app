@@ -692,6 +692,8 @@ def upload_files(current_user_id, user_subscription):
         return jsonify({'message': f'Dosya işlenirken hata oluştu: {e}'}), 500
 
 
+# Backend Code (Flask)
+
 @app.route('/upload_files_wls', methods=['POST'])
 @token_required 
 def upload_files_wls(current_user_id, user_subscription):
@@ -766,7 +768,7 @@ def upload_files_wls(current_user_id, user_subscription):
             column_names = df.columns.tolist()  
             return jsonify({'message': 'Dosya başarıyla yüklendi.', 'columnNames': column_names}), 200
         except Exception as e:
-            logging.error(f"Dosya okuma hatası: {e}")
+            logging.error(f'Dosya okuma hatası: {e}')
             return jsonify({'message': f'Dosya işlenirken hata oluştu: {e}'}), 500
     else:
         return jsonify({'message': 'Dosya başarıyla yüklendi.'}), 200
@@ -798,7 +800,7 @@ def save_selected_columns(current_user_id, user_subscription):
                 if col in df.columns:
                     value = df.at[index, col] if index < len(df) else ''
                     value = str(value).replace(' ', '') if pd.notna(value) else ''
-                    if col == selected_columns[1]:  # İkinci sütun
+                    if col == selected_columns[1]:
                         try:
                             value = "{:.2f}".format(float(value.replace(',', '.')))
                         except ValueError:
@@ -810,7 +812,7 @@ def save_selected_columns(current_user_id, user_subscription):
 
         with open(file_path, 'w') as f:
             for row in data_to_save:
-                f.write(','.join(row) + '\n')  # Aralarına ',' koy
+                f.write(','.join(row) + '\n')
 
         return jsonify({'message': 'Seçilen sütunların içeriği başarıyla kaydedildi.'}), 200
     except Exception as e:
