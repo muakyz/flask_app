@@ -17,8 +17,12 @@ from werkzeug.utils import secure_filename
 import pandas as pd
 import process4
 import process3
-
+import subprocess
+from decorators import generate_jwt, token_required, subscription_required
+from database import get_connection
 load_dotenv()
+
+
 
 app = Flask(__name__)
 CORS(app)
@@ -29,37 +33,14 @@ JWT_SECRET = os.getenv('JWT_SECRET', 'your_jwt_secret_key')
 JWT_ALGORITHM = os.getenv('JWT_ALGORITHM', 'HS256')
 JWT_EXP_DELTA_SECONDS = int(os.getenv('JWT_EXP_DELTA_SECONDS', 3600))
 
+conn = get_connection()
+cursor = conn.cursor()
+
 UPLOAD_FOLDER = os.path.join(os.getcwd(), 'uploads')
 if not os.path.exists(UPLOAD_FOLDER):
     os.makedirs(UPLOAD_FOLDER)
 app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
 
-def get_connection():
-    server = os.getenv('DB_SERVER', '45.155.159.142,1433')
-    database = os.getenv('DB_DATABASE', 'AMAZINGO')
-    driver = os.getenv('DB_DRIVER', 'ODBC Driver 17 for SQL Server')
-    username = os.getenv('DB_USERNAME', 'remote2')
-    password = os.getenv('DB_PASSWORD', 'your_db_password')
-    connection_string = (
-        f'DRIVER={{{driver}}};'
-        f'SERVER={server};'
-        f'DATABASE={database};'
-        f'UID={username};'
-        f'PWD={password};'
-    )
-    try:
-        return pyodbc.connect(connection_string)
-    except pyodbc.Error as e:
-        logging.error(f"Veritabanı bağlantı hatası: {e}")
-        raise
-try:
-    conn = get_connection()
-    cursor = conn.cursor()
-    cursor.execute("SELECT 1 AS test")
-    row = cursor.fetchone()
-    logging.info(f"Test sorgusu başarılı, sonuç: {row.test}")
-except Exception as e:
-    logging.error(f"SQL Server Bağlantı Hatası: {e}")
 
 def validate_registration_data(username, email, password, gsm):
     if not all([username, email, password, gsm]):
@@ -79,85 +60,6 @@ def validate_registration_data(username, email, password, gsm):
 
     return True, ''
 
-def generate_jwt(user_id, email, username, session_id, subscription_type):
-    payload = {
-        'id': user_id,
-        'email': email,
-        'username': username,
-        'session_id': session_id,
-        'subscription_type': subscription_type,
-        'exp': datetime.now(timezone.utc) + timedelta(seconds=JWT_EXP_DELTA_SECONDS)
-    }
-    token = jwt.encode(payload, JWT_SECRET, algorithm=JWT_ALGORITHM)
-    return token
-
-def token_required(f):
-    @wraps(f)
-    def decorated(*args, **kwargs):
-        token = None
-        auth_header = request.headers.get('Authorization')
-        if auth_header and len(auth_header.split()) == 2:
-            token = auth_header.split()[1]
-        if not token:
-            logging.warning("Token bulunamadı.")
-            return jsonify({'message': 'Token gereklidir.'}), 401
-        try:
-            data = jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGORITHM])
-            current_user_id = data['id']
-            token_session_id = data.get('session_id')
-            token_subscription_type = data.get('subscription_type')
-
-            logging.info(f"Token verileri: user_id={current_user_id}, session_id={token_session_id}, subscription_type={token_subscription_type}")
-
-            conn = get_connection()
-            cursor = conn.cursor()
-            query = "SELECT session_id, subscription_type FROM Users WHERE user_id = ?"
-            cursor.execute(query, (current_user_id,))
-            user = cursor.fetchone()
-            conn.close()
-
-            if not user:
-                logging.warning(f"Kullanıcı bulunamadı: user_id={current_user_id}")
-                return jsonify({'message': 'Kullanıcı bulunamadı.'}), 404
-
-            db_session_id = user.session_id
-            db_subscription_type = user.subscription_type
-
-            if token_session_id != db_session_id:
-                logging.warning(f"Session ID uyuşmazlığı: token_session_id={token_session_id}, db_session_id={db_session_id}")
-                return jsonify({'message': 'Geçersiz veya sona ermiş token.'}), 401
-
-            if db_subscription_type < 1:  
-                logging.warning(f"Yetersiz abonelik: subscription_type={db_subscription_type}")
-                return jsonify({'message': 'Abonelik bilgileriniz güncel değil.'}), 401
-
-            new_token = generate_jwt(current_user_id, data['email'], data['username'], token_session_id, db_subscription_type)
-           
-
-            return f(current_user_id, db_subscription_type, *args, **kwargs)
-
-        except jwt.ExpiredSignatureError:
-            logging.warning("Token süresi doldu.")
-            return jsonify({'message': 'Token süresi doldu.'}), 401
-        except jwt.InvalidTokenError:
-            logging.warning("Geçersiz token.")
-            return jsonify({'message': 'Geçersiz token.'}), 401
-        except Exception as e:
-            logging.error(f"Token doğrulama hatası: {e}")
-            return jsonify({'message': 'Token doğrulama sırasında hata oluştu.'}), 500
-    return decorated
-
-
-def subscription_required(required_level):
-    def decorator(f):
-        @wraps(f)
-        def decorated_function(current_user_id, user_subscription, *args, **kwargs):
-            if user_subscription >= required_level:
-                return f(current_user_id, *args, **kwargs)
-            else:
-                return jsonify({'message': 'Bu endpoint için yeterli abonelik seviyeniz yok.'}), 403
-        return decorated_function
-    return decorator
 
 @app.route('/register', methods=['POST'])
 def register():
@@ -329,7 +231,6 @@ def get_sellerids_for_user(current_user_id):
         logging.error(f"Veri çekme hatası: {e}")
         return jsonify({'message': 'Veri çekme sırasında bir hata oluştu.'}), 500
 
-
 @app.route('/get_user_info', methods=['GET'])
 @token_required
 @subscription_required(1)
@@ -357,7 +258,6 @@ def get_user_info(current_user_id):
         logging.error(f"Veri çekme hatası: {e}")
         return jsonify({'message': 'Veri çekme sırasında bir hata oluştu.'}), 500
 
-
 @app.route('/form_sender', methods=['POST'])
 @token_required
 def form_sender(current_user_id, db_subscription_type):
@@ -371,8 +271,7 @@ def form_sender(current_user_id, db_subscription_type):
     recipient = 'support@waytbeta.xyz'
 
     message_with_user_info = f"Mesajı gönderen ID ve Abone Tipi: {current_user_id, db_subscription_type}\n\n{message}"
-                            
-
+    
     try:
         success, msg = send_email(recipient, subject, message_with_user_info)
         if success:
@@ -599,7 +498,6 @@ def beta_request_asin_AU(current_user_id):
         return jsonify({'message': 'Veri çekme sırasında hata oluştu.'}), 500
 
 @app.route('/delete_asin', methods=['POST'])
-
 @token_required
 def delete_asin(current_user_id, user_subscription):
     try:
@@ -708,77 +606,15 @@ def get_favorite_asins(current_user_id, *args, **kwargs):
         logging.error(f"Veritabanı hatası: {e}")
         return jsonify({'message': 'Favori ASIN\'ler alınırken hata oluştu.'}), 500
 
+from multiprocessing import Process
+import os
+import logging
 
-@app.route('/upload_excel_files', methods=['POST'])
-@token_required
-def upload_excel_files(current_user_id, user_subscription):
-    conversion_rate = request.json.get('conversion_rate', 0.75) 
-    user_folder = os.path.join(app.config['UPLOAD_FOLDER'], str(current_user_id))
-    
-    try:
-        source_extensions = ['.csv']
-        target_extensions = ['.csv']
-        
-        source_file = None
-        for ext in source_extensions:
-            potential_path = os.path.join(user_folder, 'source' + ext)
-            if os.path.exists(potential_path):
-                source_file = potential_path
-                break
+def run_process_files(source_file, target_file, conversion_rate, current_user_id):
+    import process3
+    process3.process_files(source_file, target_file, conversion_rate, current_user_id)
 
-        target_file = None
-        for ext in target_extensions:
-            potential_path = os.path.join(user_folder, 'target' + ext)
-            if os.path.exists(potential_path):
-                target_file = potential_path
-                break
 
-        if not source_file or not target_file:
-            return jsonify({'message': 'Source veya target dosyası bulunamadı.'}), 400
-
-        result_df = process3.process_files(source_file, target_file, conversion_rate, current_user_id)
-        conn = get_connection()
-        cursor = conn.cursor()
-        cursor.execute("""
-            SELECT asin, profit, buy_box_current_source, 
-                   buy_box_current_source_converted, 
-                   buy_box_current_target, 
-                   bought_in_past_month_target, 
-                   buy_box_amazon_30_days_target, 
-                   buy_box_eligible_offer_count, 
-                   amazon_availability_offer_target, 
-                   roi, 
-                   is_favorited,
-                   Image
-            FROM User_Temporary_Data 
-            WHERE user_id = ?
-        """, (current_user_id,))  
-
-        rows = cursor.fetchall()
-        data = [
-            {
-                'asin': row[0],
-                'profit': row[1],
-                'bb_source': row[2],
-                'bb_source_converted': row[3],
-                'bb_target': row[4],
-                'sold_target': row[5],
-                'bb_amazon_percentage': row[6],
-                'fba_seller_count': row[7],
-                'is_amazon_selling': row[8],
-                'roi': row[9],
-                'is_favorited': row[10],
-                'image': row[11]
-            } for row in rows
-        ]
-
-        cursor.close()
-        conn.close()
-
-        return jsonify(data), 200
-    except Exception as e:
-        logging.error(f"Dosya işleme hatası: {e}")
-        return jsonify({'message': f'Dosya işleme sırasında hata oluştu: {e}'}), 500
 
 @app.route('/upload_files', methods=['POST'])
 @token_required 
@@ -861,7 +697,6 @@ def check_favorited_count(current_user_id, *args, **kwargs):
         logging.error(f"Veritabanı hatası: {e}")
         return jsonify({'message': 'Favori sayısı kontrol edilirken hata oluştu.'}), 500
 
-
 if __name__ == '__main__':
-    PORT = 5000
+    PORT = 8000
     app.run(host='0.0.0.0', port=PORT, debug=True)
