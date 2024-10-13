@@ -697,6 +697,57 @@ def check_favorited_count(current_user_id, *args, **kwargs):
         logging.error(f"Veritabanı hatası: {e}")
         return jsonify({'message': 'Favori sayısı kontrol edilirken hata oluştu.'}), 500
 
+@app.route('/wls_upload_files', methods=['POST'])
+@token_required 
+def wls_upload_files(current_user_id, user_subscription):
+    action = request.form.get('action', 'upload')
+    user_folder = os.path.join(app.config['UPLOAD_FOLDER'], str(current_user_id), 'wls')
+    os.makedirs(user_folder, exist_ok=True)
+
+    if action == 'delete':
+        try:
+            for file_name in ['wls.xlsx', 'keepa.csv']:
+                file_path = os.path.join(user_folder, file_name)
+                if os.path.exists(file_path):
+                    os.remove(file_path)
+            return jsonify({'message': 'wls ve keepa dosyaları silindi.'}), 200
+        except Exception as e:
+            logging.error(f"Silme hatası: {e}")
+            return jsonify({'message': 'Dosya silme sırasında hata oluştu.'}), 500
+
+    if 'file' not in request.files:
+        logging.error("Dosya eksik.")
+        return jsonify({'message': 'Dosya eksik.'}), 400
+
+    file = request.files['file']
+    if file.filename == '':
+        logging.error("Dosya adı boş.")
+        return jsonify({'message': 'Dosya adı boş.'}), 400
+
+    try:
+        file_type = request.form['file_type']
+        if file_type not in ['wls', 'keepa']:
+            logging.error("Geçersiz dosya tipi: %s", file_type)
+            return jsonify({'message': 'Geçersiz dosya tipi. Sadece wls veya keepa olarak belirtilmelidir.'}), 400
+
+        filename = 'wls' + os.path.splitext(file.filename)[1] if file_type == 'wls' else 'keepa.csv'
+        file_path = os.path.join(user_folder, filename)
+
+        if os.path.exists(file_path):
+            os.remove(file_path)
+
+        file.save(file_path)
+
+        logging.info("Dosya başarıyla yüklendi: %s", filename)
+        return jsonify({'message': 'Dosya başarıyla yüklendi.'}), 200
+
+    except Exception as e:
+        logging.error("Dosya yükleme hatası: %s", e)
+        return jsonify({'message': 'Dosya yüklenirken hata oluştu.'}), 500
+
+
+
+
 if __name__ == '__main__':
     PORT = 8000
     app.run(host='0.0.0.0', port=PORT, debug=True)
