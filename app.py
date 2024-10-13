@@ -693,8 +693,6 @@ def upload_files(current_user_id, user_subscription):
         return jsonify({'message': f'Dosya işlenirken hata oluştu: {e}'}), 500
 
 
-# Backend Code (Flask)
-
 @app.route('/upload_files_wls', methods=['POST'])
 @token_required 
 def upload_files_wls(current_user_id, user_subscription):
@@ -867,9 +865,6 @@ def download_product_list(current_user_id, user_subscription):
     
 
 
-
-
-
 @app.route('/process_wls_files', methods=['POST'])
 @token_required
 def process_wls_files(current_user_id, user_subscription):
@@ -883,10 +878,8 @@ def process_wls_files(current_user_id, user_subscription):
     if not os.path.exists(source_file_path) or not os.path.exists(target_file_path):
         return jsonify({'message': 'Source veya target dosyası bulunamadı.'}), 400
 
-    # Process the files and get the result
     result_json = process_files_wls(source_file_path, target_file_path, conversion_rate, current_user_id)
 
-    # Return the result directly
     return jsonify(result_json), 200
 
 

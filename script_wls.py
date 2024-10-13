@@ -71,7 +71,6 @@ def process_files_wls(source_file_path, target_file_path, conversion_rate, curre
         logging.error(f"Sütunları yeniden adlandırırken veya float'a çevirirken hata oluştu: {e}")
         raise
 
-    # Eşleşme işlemleri
     matched_rows_count = 0
     for value in selected_values:
         matched_rows = df_target[
@@ -98,11 +97,29 @@ def process_files_wls(source_file_path, target_file_path, conversion_rate, curre
 
     df_target_filtered['roi'] = round((df_target_filtered['profit'] / df_target_filtered['Buy Box: Current']) * 100, 2)
 
-    result_df = df_target_filtered[['ASIN', 'Buy Box: Current', 'profit', 'roi']]
-    result_df = result_df[result_df['roi'] > 30]
+  
+    result_list = []  
 
-    if result_df.empty:
+    for _, row in df_target_filtered.iterrows():
+        product_info = {
+            "asin": row['ASIN'],
+            "bb_amazon_percentage": row.get('Buy Box: % Amazon 30 days', "0.0"),
+            "bb_source": row['Buy Box: Current'],
+            "bb_source_converted": row['Buy Box: Current'],  
+            "bb_target": row['Buy Box: Current'], 
+            "fba_seller_count": row.get('Buy Box Eligible Counts: New FBA', 0),
+            "image": row['Image'],
+            "is_amazon_selling": row.get('Amazon: Availability of the Amazon offer', "no Amazon offer exists"),
+            "is_favorited": row.get('is_favorited', False),  
+            "profit": row['profit'],
+            "roi": row['roi'],
+            "sold_target": row.get('Bought in past month', 0) 
+        }
+
+        result_list.append(product_info) 
+
+    if not result_list:
         logging.warning("ROI filtresinden geçen hiçbir satır yok.")
         return {'message': 'No results meet the ROI criteria.'}
 
-    return result_df.to_json(orient='records')
+    return result_list  
