@@ -773,11 +773,13 @@ def upload_files_wls(current_user_id, user_subscription):
     else:
         return jsonify({'message': 'Dosya başarıyla yüklendi.'}), 200
 
+# Backend Code (Flask)
 
 @app.route('/save_selected_columns', methods=['POST'])
 @token_required
 def save_selected_columns(current_user_id, user_subscription):
     selected_columns = request.json.get('selectedColumns', [])
+    currency = request.json.get('currency', 'USD')
     file_name = 'selected_columns.txt'
     user_folder = os.path.join(app.config['UPLOAD_FOLDER'], str(current_user_id), 'wls')
     file_path = os.path.join(user_folder, file_name)
@@ -794,16 +796,23 @@ def save_selected_columns(current_user_id, user_subscription):
         df = pd.read_excel(source_file_path)
         row_count = len(df) 
         data_to_save = []
+        conversion_factor = 1.0
+
+        if currency == 'GBP':
+            conversion_factor = 1.31
+        elif currency == 'CAD':
+            conversion_factor = 0.73
 
         for index in range(len(df)):
             row = []
-            for col in selected_columns:
+            for i, col in enumerate(selected_columns):
                 if col in df.columns:
                     value = df.at[index, col] if index < len(df) else ''
                     value = str(value).replace(' ', '') if pd.notna(value) else ''
-                    if col == selected_columns[1]:
+                    if i == 1:
                         try:
-                            value = "{:.2f}".format(float(value.replace(',', '.')))
+                            num = float(value.replace(',', '.'))
+                            value = "{:.2f}".format(num * conversion_factor)
                         except ValueError:
                             value = ''
                     row.append(value)
@@ -822,6 +831,7 @@ def save_selected_columns(current_user_id, user_subscription):
     except Exception as e:
         logging.error(f'Dosya yazma hatası: {e}')
         return jsonify({'message': 'Dosya kaydedilirken hata oluştu.'}), 500
+
 
 
 
