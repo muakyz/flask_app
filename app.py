@@ -20,6 +20,7 @@ import script_csv
 import subprocess
 from decorators import generate_jwt, token_required, subscription_required
 from database import get_connection
+from script_wls import process_files_wls
 load_dotenv()
 
 
@@ -863,6 +864,35 @@ def download_product_list(current_user_id, user_subscription):
     except Exception as e:
         logging.error(f'Ürün listesi indirme hatası: {e}')
         return jsonify({'message': 'Ürün listesi indirilirken hata oluştu.'}), 500
+    
+
+
+
+
+
+@app.route('/process_wls_files', methods=['POST'])
+@token_required
+def process_wls_files(current_user_id, user_subscription):
+    conversion_rate = request.json.get('conversion_rate', 0.75)
+    
+    user_folder = os.path.join(app.config['UPLOAD_FOLDER'], str(current_user_id), 'wls')
+    
+    source_file_path = os.path.join(user_folder, 'selected_columns.txt')
+    target_file_path = os.path.join(user_folder, 'wlskeepa.csv')
+
+    if not os.path.exists(source_file_path) or not os.path.exists(target_file_path):
+        return jsonify({'message': 'Source veya target dosyası bulunamadı.'}), 400
+
+    process_files_wls(source_file_path, target_file_path, conversion_rate, current_user_id)
+
+    return jsonify({'message': 'Dosyalar başarıyla işlendi.'}), 200
+
+
+
+
+
+
+
 
 if __name__ == '__main__':
     PORT = 8000
