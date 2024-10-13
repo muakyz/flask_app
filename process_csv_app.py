@@ -4,7 +4,7 @@ from multiprocessing import Process
 import os
 import logging
 from werkzeug.utils import secure_filename
-import process4
+import script_flags
 from decorators import token_required
 import database
 
@@ -17,10 +17,10 @@ if not os.path.exists(UPLOAD_FOLDER):
 app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
 
 def run_process_files(source_file, target_file, conversion_rate, current_user_id):
-    import process3
-    process3.process_files(source_file, target_file, conversion_rate, current_user_id)
+    import script_csv
+    script_csv.process_files(source_file, target_file, conversion_rate, current_user_id)
 
-@app.route('/upload_excel_files', methods=['POST'])
+@app.route('/process_csv_files', methods=['POST'])
 @token_required
 def upload_excel_files(current_user_id, user_subscription):
     conversion_rate = request.json.get('conversion_rate', 0.75) 

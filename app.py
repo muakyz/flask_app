@@ -15,8 +15,8 @@ from datetime import datetime, timedelta, timezone
 import uuid
 from werkzeug.utils import secure_filename
 import pandas as pd
-import process4
-import process3
+import script_flags
+import script_csv
 import subprocess
 from decorators import generate_jwt, token_required, subscription_required
 from database import get_connection
@@ -611,8 +611,8 @@ import os
 import logging
 
 def run_process_files(source_file, target_file, conversion_rate, current_user_id):
-    import process3
-    process3.process_files(source_file, target_file, conversion_rate, current_user_id)
+    import script_csv
+    script_csv.process_files(source_file, target_file, conversion_rate, current_user_id)
 
 
 
@@ -659,7 +659,7 @@ def upload_files(current_user_id, user_subscription):
     file.save(file_path)
 
     try:
-        currency = process4.get_currency(file_path)
+        currency = script_flags.get_currency(file_path)
         return jsonify({'message': 'Dosya başarıyla yüklendi.', 'currency': currency}), 200
     except Exception as e:
         logging.error(f"Dosya işleme hatası: {e}")
