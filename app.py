@@ -883,9 +883,12 @@ def process_wls_files(current_user_id, user_subscription):
     if not os.path.exists(source_file_path) or not os.path.exists(target_file_path):
         return jsonify({'message': 'Source veya target dosyası bulunamadı.'}), 400
 
-    process_files_wls(source_file_path, target_file_path, conversion_rate, current_user_id)
+    # Process the files and get the result
+    result_json = process_files_wls(source_file_path, target_file_path, conversion_rate, current_user_id)
 
-    return jsonify({'message': 'Dosyalar başarıyla işlendi.'}), 200
+    # Return the result directly
+    return jsonify(result_json), 200
+
 
 
 
