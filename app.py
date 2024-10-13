@@ -691,6 +691,8 @@ def upload_files(current_user_id, user_subscription):
         logging.error(f"Dosya işleme hatası: {e}")
         return jsonify({'message': f'Dosya işlenirken hata oluştu: {e}'}), 500
 
+
+
 @app.route('/upload_files_wls', methods=['POST'])
 @token_required 
 def upload_files_wls(current_user_id, user_subscription):
@@ -756,8 +758,37 @@ def upload_files_wls(current_user_id, user_subscription):
         except Exception as e:
             logging.error(f"Dosya işleme hatası: {e}")
             return jsonify({'message': f'Dosya işlenirken hata oluştu: {e}'}), 500
+    elif file_type == 'source':
+        try:
+            df = pd.read_excel(file_path)  
+            column_names = df.columns.tolist()  
+            return jsonify({'message': 'Dosya başarıyla yüklendi.', 'columnNames': column_names}), 200
+        except Exception as e:
+            logging.error(f"Dosya okuma hatası: {e}")
+            return jsonify({'message': f'Dosya işlenirken hata oluştu: {e}'}), 500
     else:
         return jsonify({'message': 'Dosya başarıyla yüklendi.'}), 200
+
+@app.route('/save_selected_columns', methods=['POST'])
+@token_required
+def save_selected_columns(current_user_id, user_subscription):
+    selected_columns = request.json.get('selectedColumns', [])
+    file_name = 'selected_columns.txt'
+    user_folder = os.path.join(app.config['UPLOAD_FOLDER'], str(current_user_id), 'wls')
+    file_path = os.path.join(user_folder, file_name)
+
+    if not selected_columns or len(selected_columns) < 2:
+        return jsonify({'message': 'En az iki sütun seçmelisiniz.'}), 400
+
+    # Dosya yazma işlemi
+    try:
+        with open(file_path, 'w') as f:
+            f.write(','.join(selected_columns))
+        return jsonify({'message': 'Seçilen sütunlar başarıyla kaydedildi.'}), 200
+    except Exception as e:
+        logging.error(f'Dosya yazma hatası: {e}')
+        return jsonify({'message': 'Dosya kaydedilirken hata oluştu.'}), 500
+
 
 
 
