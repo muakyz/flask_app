@@ -792,6 +792,7 @@ def save_selected_columns(current_user_id, user_subscription):
 
     try:
         df = pd.read_excel(source_file_path)
+        row_count = len(df) 
         data_to_save = []
 
         for index in range(len(df)):
@@ -814,7 +815,10 @@ def save_selected_columns(current_user_id, user_subscription):
             for row in data_to_save:
                 f.write(','.join(row) + '\n')
 
-        return jsonify({'message': 'Seçilen sütunların içeriği başarıyla kaydedildi.'}), 200
+        return jsonify({
+            'message': 'Seçilen sütunların içeriği başarıyla kaydedildi.',
+            'rowCount': row_count  
+        }), 200
     except Exception as e:
         logging.error(f'Dosya yazma hatası: {e}')
         return jsonify({'message': 'Dosya kaydedilirken hata oluştu.'}), 500
