@@ -1,4 +1,4 @@
-from flask import Flask, request, jsonify
+from flask import Flask, request, jsonify, send_file
 from flask_cors import CORS
 import pyodbc
 import bcrypt
@@ -773,8 +773,6 @@ def upload_files_wls(current_user_id, user_subscription):
     else:
         return jsonify({'message': 'Dosya başarıyla yüklendi.'}), 200
 
-# Backend Code (Flask)
-
 @app.route('/save_selected_columns', methods=['POST'])
 @token_required
 def save_selected_columns(current_user_id, user_subscription):
@@ -820,6 +818,7 @@ def save_selected_columns(current_user_id, user_subscription):
                     row.append('')
             data_to_save.append(row)
 
+        os.makedirs(user_folder, exist_ok=True)
         with open(file_path, 'w') as f:
             for row in data_to_save:
                 f.write(','.join(row) + '\n')
@@ -832,11 +831,38 @@ def save_selected_columns(current_user_id, user_subscription):
         logging.error(f'Dosya yazma hatası: {e}')
         return jsonify({'message': 'Dosya kaydedilirken hata oluştu.'}), 500
 
+@app.route('/download_product_list', methods=['GET'])
+@token_required
+def download_product_list(current_user_id, user_subscription):
+    user_folder = os.path.join(app.config['UPLOAD_FOLDER'], str(current_user_id), 'wls')
+    file_path = os.path.join(user_folder, 'selected_columns.txt')
 
+    if not os.path.exists(file_path):
+        return jsonify({'message': 'Dosya bulunamadı.'}), 400
 
-
-
-
+    try:
+        with open(file_path, 'r') as f:
+            lines = f.readlines()
+        processed_lines = []
+        for line in lines:
+            parts = line.strip().split(',')
+            if parts:
+                first_part = parts[0]
+                if first_part:
+                    processed_lines.append(first_part)
+        processed_content = '\n'.join(processed_lines)
+        processed_file_path = os.path.join(user_folder, 'urun_listesi.txt')
+        with open(processed_file_path, 'w') as f:
+            f.write(processed_content)
+        return send_file(
+            processed_file_path,
+            as_attachment=True,
+            download_name='urun_listesi.txt',
+            mimetype='text/plain'
+        )
+    except Exception as e:
+        logging.error(f'Ürün listesi indirme hatası: {e}')
+        return jsonify({'message': 'Ürün listesi indirilirken hata oluştu.'}), 500
 
 if __name__ == '__main__':
     PORT = 8000
