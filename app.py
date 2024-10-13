@@ -742,7 +742,7 @@ def upload_files_wls(current_user_id, user_subscription):
             return jsonify({'message': 'Geçersiz dosya türü. Sadece .csv dosyalarına izin verilir.'}), 400
 
     filename = secure_filename(file.filename)
-    filename = save_name + extension
+    filename = save_name + '_wsl' + extension
     file_path = os.path.join(user_folder, filename)
 
     if os.path.exists(file_path):
@@ -758,6 +758,7 @@ def upload_files_wls(current_user_id, user_subscription):
             return jsonify({'message': f'Dosya işlenirken hata oluştu: {e}'}), 500
     else:
         return jsonify({'message': 'Dosya başarıyla yüklendi.'}), 200
+
 
 
 if __name__ == '__main__':
