@@ -797,19 +797,26 @@ def save_selected_columns(current_user_id, user_subscription):
             for col in selected_columns:
                 if col in df.columns:
                     value = df.at[index, col] if index < len(df) else ''
-                    row.append(str(value) if pd.notna(value) else '')
+                    value = str(value).replace(' ', '') if pd.notna(value) else ''
+                    if col == selected_columns[1]:  # İkinci sütun
+                        try:
+                            value = "{:.2f}".format(float(value.replace(',', '.')))
+                        except ValueError:
+                            value = ''
+                    row.append(value)
                 else:
                     row.append('')
             data_to_save.append(row)
 
         with open(file_path, 'w') as f:
             for row in data_to_save:
-                f.write('\t'.join(row) + '\n')
+                f.write(','.join(row) + '\n')  # Aralarına ',' koy
 
         return jsonify({'message': 'Seçilen sütunların içeriği başarıyla kaydedildi.'}), 200
     except Exception as e:
         logging.error(f'Dosya yazma hatası: {e}')
         return jsonify({'message': 'Dosya kaydedilirken hata oluştu.'}), 500
+
 
 
 
