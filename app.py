@@ -606,13 +606,39 @@ def get_favorite_asins(current_user_id, *args, **kwargs):
         logging.error(f"Veritabanı hatası: {e}")
         return jsonify({'message': 'Favori ASIN\'ler alınırken hata oluştu.'}), 500
 
-from multiprocessing import Process
-import os
-import logging
 
-def run_process_files(source_file, target_file, conversion_rate, current_user_id):
-    import script_csv
-    script_csv.process_files(source_file, target_file, conversion_rate, current_user_id)
+@app.route('/check_favorited_count', methods=['GET'])
+@token_required
+@subscription_required(1)
+def check_favorited_count(current_user_id, *args, **kwargs):
+    try:
+        cursor = conn.cursor()
+        query = """
+            SELECT 
+                u.subscription_type,
+                COUNT(ud.is_favorited) AS favorited_count
+            FROM Users u
+            LEFT JOIN User_Temporary_Data ud ON u.user_id = ud.user_id AND ud.is_favorited = 1
+            WHERE u.user_id = ?
+            GROUP BY u.subscription_type
+        """
+        cursor.execute(query, (current_user_id,))
+        result = cursor.fetchone()
+
+        if result:
+            subscription_type, favorited_count = result
+            return jsonify({
+                'user_id': current_user_id,
+                'subscription_type': subscription_type,
+                'favorited_count': favorited_count
+            }), 200
+        else:
+            return jsonify({'message': 'Kullanıcı bulunamadı.'}), 404
+
+    except Exception as e:
+        logging.error(f"Veritabanı hatası: {e}")
+        return jsonify({'message': 'Favori sayısı kontrol edilirken hata oluştu.'}), 500
+
 
 
 
@@ -665,90 +691,73 @@ def upload_files(current_user_id, user_subscription):
         logging.error(f"Dosya işleme hatası: {e}")
         return jsonify({'message': f'Dosya işlenirken hata oluştu: {e}'}), 500
 
-@app.route('/check_favorited_count', methods=['GET'])
-@token_required
-@subscription_required(1)
-def check_favorited_count(current_user_id, *args, **kwargs):
-    try:
-        cursor = conn.cursor()
-        query = """
-            SELECT 
-                u.subscription_type,
-                COUNT(ud.is_favorited) AS favorited_count
-            FROM Users u
-            LEFT JOIN User_Temporary_Data ud ON u.user_id = ud.user_id AND ud.is_favorited = 1
-            WHERE u.user_id = ?
-            GROUP BY u.subscription_type
-        """
-        cursor.execute(query, (current_user_id,))
-        result = cursor.fetchone()
-
-        if result:
-            subscription_type, favorited_count = result
-            return jsonify({
-                'user_id': current_user_id,
-                'subscription_type': subscription_type,
-                'favorited_count': favorited_count
-            }), 200
-        else:
-            return jsonify({'message': 'Kullanıcı bulunamadı.'}), 404
-
-    except Exception as e:
-        logging.error(f"Veritabanı hatası: {e}")
-        return jsonify({'message': 'Favori sayısı kontrol edilirken hata oluştu.'}), 500
-
-@app.route('/wls_upload_files', methods=['POST'])
+@app.route('/upload_files_wls', methods=['POST'])
 @token_required 
-def wls_upload_files(current_user_id, user_subscription):
+def upload_files_wls(current_user_id, user_subscription):
     action = request.form.get('action', 'upload')
     user_folder = os.path.join(app.config['UPLOAD_FOLDER'], str(current_user_id), 'wls')
     os.makedirs(user_folder, exist_ok=True)
 
     if action == 'delete':
-        try:
-            for file_name in ['wls.xlsx', 'keepa.csv']:
-                file_path = os.path.join(user_folder, file_name)
-                if os.path.exists(file_path):
-                    os.remove(file_path)
-            return jsonify({'message': 'wls ve keepa dosyaları silindi.'}), 200
-        except Exception as e:
-            logging.error(f"Silme hatası: {e}")
-            return jsonify({'message': 'Dosya silme sırasında hata oluştu.'}), 500
+        file_type = request.form.get('file_type')
+        if file_type not in ['source', 'target']:
+            return jsonify({'message': 'Geçersiz dosya tipi.'}), 400
+        if file_type == 'source':
+            extensions = ['.xlsx']
+            save_name = 'wls'
+        else:
+            extensions = ['.csv']
+            save_name = 'wlskeepa'
+        
+        for ext in extensions:
+            file_path = os.path.join(user_folder, save_name + ext)
+            if os.path.exists(file_path):
+                os.remove(file_path)
+                break
+        return jsonify({'message': f'{file_type} dosyası silindi.'}), 200
 
-    if 'file' not in request.files:
-        logging.error("Dosya eksik.")
-        return jsonify({'message': 'Dosya eksik.'}), 400
+    if 'file' not in request.files or 'file_type' not in request.form:
+        return jsonify({'message': 'Dosya veya dosya tipi eksik'}), 400
 
     file = request.files['file']
+    file_type = request.form['file_type']
+
     if file.filename == '':
-        logging.error("Dosya adı boş.")
-        return jsonify({'message': 'Dosya adı boş.'}), 400
+        return jsonify({'message': 'Dosya adı boş'}), 400
 
-    try:
-        file_type = request.form['file_type']
-        if file_type not in ['wls', 'keepa']:
-            logging.error("Geçersiz dosya tipi: %s", file_type)
-            return jsonify({'message': 'Geçersiz dosya tipi. Sadece wls veya keepa olarak belirtilmelidir.'}), 400
+    if file_type == 'source':
+        allowed_extensions = {'.xlsx'}
+        save_name = 'wls'
+    elif file_type == 'target':
+        allowed_extensions = {'.csv'}
+        save_name = 'wlskeepa'
+    else:
+        return jsonify({'message': 'Geçersiz dosya tipi.'}), 400
 
-        filename = 'wls' + os.path.splitext(file.filename)[1] if file_type == 'wls' else 'keepa.csv'
-        file_path = os.path.join(user_folder, filename)
+    extension = os.path.splitext(file.filename)[1].lower()
+    if extension not in allowed_extensions:
+        if file_type == 'source':
+            return jsonify({'message': 'Geçersiz dosya türü. Sadece .xlsx dosyalarına izin verilir.'}), 400
+        else:
+            return jsonify({'message': 'Geçersiz dosya türü. Sadece .csv dosyalarına izin verilir.'}), 400
 
-        if os.path.exists(file_path):
-            os.remove(file_path)
+    filename = secure_filename(file.filename)
+    filename = save_name + extension
+    file_path = os.path.join(user_folder, filename)
 
-        file.save(file_path)
+    if os.path.exists(file_path):
+        os.remove(file_path)
+    file.save(file_path)
 
-        if file_type == 'keepa':
-            currency = script_flags.get_currency(file_path)  
-            logging.info("Bayrak eşleştirmesi için para birimi alındı: %s", currency)
-
-        logging.info("Dosya başarıyla yüklendi: %s", filename)
+    if file_type == 'target':
+        try:
+            currency = script_flags.get_currency(file_path) 
+            return jsonify({'message': 'Dosya başarıyla yüklendi.', 'currency': currency}), 200
+        except Exception as e:
+            logging.error(f"Dosya işleme hatası: {e}")
+            return jsonify({'message': f'Dosya işlenirken hata oluştu: {e}'}), 500
+    else:
         return jsonify({'message': 'Dosya başarıyla yüklendi.'}), 200
-
-    except Exception as e:
-        logging.error("Dosya yükleme hatası: %s", e)
-        return jsonify({'message': 'Dosya yüklenirken hata oluştu.'}), 500
-
 
 
 if __name__ == '__main__':
