@@ -692,7 +692,6 @@ def upload_files(current_user_id, user_subscription):
         return jsonify({'message': f'Dosya işlenirken hata oluştu: {e}'}), 500
 
 
-
 @app.route('/upload_files_wls', methods=['POST'])
 @token_required 
 def upload_files_wls(current_user_id, user_subscription):
@@ -744,7 +743,10 @@ def upload_files_wls(current_user_id, user_subscription):
             return jsonify({'message': 'Geçersiz dosya türü. Sadece .csv dosyalarına izin verilir.'}), 400
 
     filename = secure_filename(file.filename)
-    filename = save_name + '_wsl' + extension
+    if file_type == 'source':
+        filename = 'wls' + extension
+    else:
+        filename = 'wlskeepa' + extension
     file_path = os.path.join(user_folder, filename)
 
     if os.path.exists(file_path):
@@ -769,6 +771,8 @@ def upload_files_wls(current_user_id, user_subscription):
     else:
         return jsonify({'message': 'Dosya başarıyla yüklendi.'}), 200
 
+
+
 @app.route('/save_selected_columns', methods=['POST'])
 @token_required
 def save_selected_columns(current_user_id, user_subscription):
@@ -776,15 +780,28 @@ def save_selected_columns(current_user_id, user_subscription):
     file_name = 'selected_columns.txt'
     user_folder = os.path.join(app.config['UPLOAD_FOLDER'], str(current_user_id), 'wls')
     file_path = os.path.join(user_folder, file_name)
+    source_file_path = os.path.join(user_folder, 'wls.xlsx')
+
+    if not os.path.exists(source_file_path):
+        logging.error(f'Dosya bulunamadı: {source_file_path}')
+        return jsonify({'message': f'Dosya bulunamadı: {source_file_path}'}), 400
 
     if not selected_columns or len(selected_columns) < 2:
         return jsonify({'message': 'En az iki sütun seçmelisiniz.'}), 400
 
-    # Dosya yazma işlemi
     try:
+        df = pd.read_excel(source_file_path)
+        content_to_save = []
+        for col in selected_columns:
+            if col in df.columns:
+                content_to_save.append(df[col].dropna().tolist())
+
+        flat_content = [str(item) for sublist in content_to_save for item in sublist]
+        
         with open(file_path, 'w') as f:
-            f.write(','.join(selected_columns))
-        return jsonify({'message': 'Seçilen sütunlar başarıyla kaydedildi.'}), 200
+            f.write('\n'.join(flat_content))
+
+        return jsonify({'message': 'Seçilen sütunların içeriği başarıyla kaydedildi.'}), 200
     except Exception as e:
         logging.error(f'Dosya yazma hatası: {e}')
         return jsonify({'message': 'Dosya kaydedilirken hata oluştu.'}), 500
