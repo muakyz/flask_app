@@ -119,7 +119,7 @@ def get_favorite_asins_wls(current_user_id, user_subscription):
                    matched_value,
                    currency_info
             FROM wls_User_Temporary_Data 
-            WHERE user_id = ? and is_favorited =
+            WHERE user_id = ? AND is_favorited = 1
         """, (current_user_id,))  
 
         rows = cursor.fetchall()
