@@ -742,7 +742,37 @@ def check_favorited_count(current_user_id, *args, **kwargs):
         logging.error(f"Veritabanı hatası: {e}")
         return jsonify({'message': 'Favori sayısı kontrol edilirken hata oluştu.'}), 500
 
+@app.route('/check_favorited_count_wls', methods=['GET'])
+@token_required
+@subscription_required(1)
+def check_favorited_count_wls(current_user_id, *args, **kwargs):
+    try:
+        cursor = conn.cursor()
+        query = """
+            SELECT 
+                u.subscription_type,
+                COUNT(ud.is_favorited) AS favorited_count
+            FROM Users u
+            LEFT JOIN User_Temporary_Data ud ON u.user_id = ud.user_id AND ud.is_favorited = 1
+            WHERE u.user_id = ?
+            GROUP BY u.subscription_type
+        """
+        cursor.execute(query, (current_user_id,))
+        result = cursor.fetchone()
 
+        if result:
+            subscription_type, favorited_count = result
+            return jsonify({
+                'user_id': current_user_id,
+                'subscription_type': subscription_type,
+                'favorited_count': favorited_count
+            }), 200
+        else:
+            return jsonify({'message': 'Kullanıcı bulunamadı.'}), 404
+
+    except Exception as e:
+        logging.error(f"Veritabanı hatası: {e}")
+        return jsonify({'message': 'Favori sayısı kontrol edilirken hata oluştu.'}), 500
 
 
 @app.route('/upload_files', methods=['POST'])
