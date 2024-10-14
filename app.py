@@ -42,6 +42,94 @@ if not os.path.exists(UPLOAD_FOLDER):
     os.makedirs(UPLOAD_FOLDER)
 app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
 
+@app.route('/get_wls_results', methods=['GET'])
+@token_required
+def get_wls_results(current_user_id, user_subscription):
+    try:
+        conn = get_connection()
+        cursor = conn.cursor()
+        cursor.execute("""
+            SELECT asin, profit, buy_box_current_source, 
+                   buy_box_current_source_converted, 
+                   buy_box_current_target, 
+                   bought_in_past_month_target, 
+                   buy_box_amazon_30_days_target, 
+                   buy_box_eligible_offer_count, 
+                   amazon_availability_offer_target, 
+                   roi, 
+                   is_favorited,
+                   Image,
+                   matched_column,
+                   matched_value,
+                   currency_info
+            FROM wls_User_Temporary_Data 
+            WHERE user_id = ?
+        """, (current_user_id,))  
+
+        rows = cursor.fetchall()
+        data = [
+            {
+                'asin': row[0],
+                'profit': row[1],
+                'bb_source': row[2],
+                'bb_source_converted': row[3],
+                'bb_target': row[4],
+                'bought_in_past_month': row[5],
+                'buy_box_amazon_percentage': row[6],
+                'buy_box_eligible_offer_count': row[7],
+                'is_amazon_selling': row[8],
+                'roi': row[9],
+                'is_favorited': row[10],
+                'image': row[11],
+                'matched_column': row[12],
+                'matched_value': row[13],
+            } for row in rows
+        ]
+
+        if rows and len(rows[0]) >= 15:
+            currency_info = rows[0][14]
+            if '/' in currency_info:
+                source_currency, target_currency = currency_info.split('/', 1)
+            else:
+                source_currency = currency_info
+                target_currency = ''
+        else:
+            source_currency = ''
+            target_currency = ''
+
+        cursor.close()
+        conn.close()
+
+        return jsonify({
+            'data': data,
+            'source_currency': source_currency,
+            'target_currency': target_currency
+        }), 200
+    except Exception as e:
+        logging.error(f"Sonuçları getirirken hata oluştu: {e}")
+        return jsonify({'message': f'Sonuçları getirirken hata oluştu: {e}'}), 500
+
+
+@app.route('/delete_non_favorited_asin_wls', methods=['POST'])
+@token_required
+def delete_non_favorited_asin_wls(current_user_id, user_subscription):
+    try:
+        conn = get_connection()
+        cursor = conn.cursor()
+        delete_query = """
+            DELETE FROM wls_User_Temporary_Data
+            WHERE user_id = ? AND is_favorited = 0
+        """
+        cursor.execute(delete_query, (current_user_id,))
+        conn.commit()
+        cursor.close()
+        conn.close()
+        return jsonify({'message': 'Favori olmayan ASIN\'ler başarıyla silindi.'}), 200
+    except Exception as e:
+        logging.error(f"ASIN silme hatası: {e}")
+        return jsonify({'message': f'ASIN silme sırasında hata oluştu: {e}'}), 500
+
+
 
 def validate_registration_data(username, email, password, gsm):
     if not all([username, email, password, gsm]):

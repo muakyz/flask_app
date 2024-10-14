@@ -6,7 +6,7 @@ import logging
 import os
 import time
 
-logging.basicConfig(level=logging.INFO, format='%(levelname)s:%(levelname)s:%(message)s')
+logging.basicConfig(level=logging.INFO, format='%(levelname)s:%(message)s')
 
 pd.set_option('mode.chained_assignment', None)
 warnings.filterwarnings("ignore", category=UserWarning)
@@ -34,6 +34,12 @@ def get_connection():
 
 def process_files_wls(txt_file_path, source_file_path, conversion_rate, current_user_id):
     start_time = time.time()
+
+    try:
+        conversion_rate = float(conversion_rate)
+    except ValueError:
+        logging.error(f"Dönüşüm oranı bir sayıya dönüştürülemedi: {conversion_rate}")
+        raise
 
     try:
         df_source = pd.read_csv(txt_file_path, sep=',', header=None, names=['key', 'Buy Box: Current_source'])
@@ -69,8 +75,8 @@ def process_files_wls(txt_file_path, source_file_path, conversion_rate, current_
 
     try:
         for col in float_columns:
-            df_target[col] = df_target[col].astype(str).str.extract(r'(\d+\.?\d*)')[0].astype(float)
-        df_source['Buy Box: Current_source'] = df_source['Buy Box: Current_source'].astype(float)
+            df_target[col] = pd.to_numeric(df_target[col].astype(str).str.extract(r'(\d+\.?\d*)')[0], errors='coerce').fillna(0.0)
+        df_source['Buy Box: Current_source'] = pd.to_numeric(df_source['Buy Box: Current_source'], errors='coerce').fillna(0.0)
         logging.info("Belirtilen sütunlar başarıyla float değerine çevrildi.")
     except Exception as e:
         logging.error(f"Sütunları float değerine çevirirken hata oluştu: {e}")
@@ -155,8 +161,6 @@ def process_files_wls(txt_file_path, source_file_path, conversion_rate, current_
     for col in numeric_columns:
         result_df[col] = pd.to_numeric(result_df[col], errors='coerce').fillna(0)
 
-    #result_df = result_df[result_df['roi'] > 30]
-
     if result_df.empty:
         logging.warning("ROI filtresinden geçen hiçbir satır yok. Veri tabanına ekleme yapılmayacak.")
     else:
@@ -177,7 +181,7 @@ def process_files_wls(txt_file_path, source_file_path, conversion_rate, current_
             for _, row in result_df.iterrows():
                 currency_info = f"{source_currency.upper()}/{target_currency.upper()}"
                 if row['ASIN'] not in existing_asins:
-                    insert_data.append((
+                    data_tuple = (
                         current_user_id,
                         row['ASIN'],
                         row['profit'],
@@ -194,9 +198,13 @@ def process_files_wls(txt_file_path, source_file_path, conversion_rate, current_
                         currency_info,
                         row['matched_column'],
                         row['matched_value']
-                    ))
+                    )
+                    if len(data_tuple) != 16:
+                        logging.error(f"Insert tuple uzunluğu hatalı: {len(data_tuple)} - Veri: {data_tuple}")
+                        continue
+                    insert_data.append(data_tuple)
                 else:
-                    update_data.append((
+                    data_tuple = (
                         row['profit'],
                         row['Buy Box: Current_source'],
                         row['Buy Box: Current_source_converted'],
@@ -211,7 +219,11 @@ def process_files_wls(txt_file_path, source_file_path, conversion_rate, current_
                         row['matched_value'],
                         current_user_id,
                         row['ASIN']
-                    ))
+                    )
+                    if len(data_tuple) != 14:
+                        logging.error(f"Update tuple uzunluğu hatalı: {len(data_tuple)} - Veri: {data_tuple}")
+                        continue
+                    update_data.append(data_tuple)
 
             logging.info(f"Yeni eklenmesi gereken satır sayısı: {len(insert_data)}")
             logging.info(f"Güncellenmesi gereken satır sayısı: {len(update_data)}")
