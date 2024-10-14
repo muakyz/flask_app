@@ -169,9 +169,6 @@ def update_note(current_user_id, user_subscription):
         if not asin:
             return jsonify({'message': 'ASIN belirtilmedi.'}), 400
 
-        if len(note) > 50:
-            return jsonify({'message': 'Not 50 karakteri aşamaz.'}), 400
-
         conn = get_connection()
         cursor = conn.cursor()
         cursor.execute("""
@@ -187,7 +184,9 @@ def update_note(current_user_id, user_subscription):
         return jsonify({'message': 'Not başarıyla güncellendi.'}), 200
     except Exception as e:
         logging.error(f"Not güncellenirken hata oluştu: {e}")
-        return jsonify({'message': f'Not güncellenirken hata oluştu: {e}'}), 500
+        return jsonify({'message': 'Not güncellenirken hata oluştu.'}), 500
+
+
 
 
 
@@ -1088,7 +1087,6 @@ def download_product_list(current_user_id, user_subscription):
         logging.error(f'Ürün listesi indirme hatası: {e}')
         return jsonify({'message': 'Ürün listesi indirilirken hata oluştu.'}), 500
     
-
 
 @app.route('/process_wls_files', methods=['POST'])
 @token_required
