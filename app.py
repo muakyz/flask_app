@@ -61,7 +61,8 @@ def get_wls_results(current_user_id, user_subscription):
                    Image,
                    matched_column,
                    matched_value,
-                   currency_info
+                   currency_info,
+                   note
             FROM wls_User_Temporary_Data 
             WHERE user_id = ?
         """, (current_user_id,))  
@@ -83,7 +84,8 @@ def get_wls_results(current_user_id, user_subscription):
                 'image': row[11],
                 'matched_column': row[12],
                 'matched_value': row[13],
-                'currency_info': row[14]
+                'currency_info': row[14],
+                'note': row[15]  
             } for row in rows
         ]
 
@@ -117,7 +119,8 @@ def get_favorite_asins_wls(current_user_id, user_subscription):
                    Image,
                    matched_column,
                    matched_value,
-                   currency_info
+                   currency_info,
+                   note
             FROM wls_User_Temporary_Data 
             WHERE user_id = ? AND is_favorited = 1
         """, (current_user_id,))  
@@ -139,7 +142,8 @@ def get_favorite_asins_wls(current_user_id, user_subscription):
                 'image': row[11],
                 'matched_column': row[12],
                 'matched_value': row[13],
-                'currency_info': row[14]
+                'currency_info': row[14],
+                'note': row[15]  
             } for row in rows
         ]
 
@@ -152,6 +156,40 @@ def get_favorite_asins_wls(current_user_id, user_subscription):
     except Exception as e:
         logging.error(f"Sonuçları getirirken hata oluştu: {e}")
         return jsonify({'message': f'Sonuçları getirirken hata oluştu: {e}'}), 500
+
+
+@app.route('/update_note', methods=['POST'])
+@token_required
+def update_note(current_user_id, user_subscription):
+    try:
+        data = request.get_json()
+        asin = data.get('asin')
+        note = data.get('note', '').strip()
+
+        if not asin:
+            return jsonify({'message': 'ASIN belirtilmedi.'}), 400
+
+        if len(note) > 50:
+            return jsonify({'message': 'Not 50 karakteri aşamaz.'}), 400
+
+        conn = get_connection()
+        cursor = conn.cursor()
+        cursor.execute("""
+            UPDATE wls_User_Temporary_Data 
+            SET note = ?
+            WHERE user_id = ? AND asin = ?
+        """, (note, current_user_id, asin))
+        conn.commit()
+
+        cursor.close()
+        conn.close()
+
+        return jsonify({'message': 'Not başarıyla güncellendi.'}), 200
+    except Exception as e:
+        logging.error(f"Not güncellenirken hata oluştu: {e}")
+        return jsonify({'message': f'Not güncellenirken hata oluştu: {e}'}), 500
+
+
 
 
 @app.route('/delete_non_favorited_asin_wls', methods=['POST'])
