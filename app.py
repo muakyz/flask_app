@@ -331,7 +331,6 @@ def get_user_info(current_user_id):
             return jsonify({'user_info': user_info}), 200
         else:
             return jsonify({'message': 'Kullanıcı bulunamadı.'}), 404
-
     except Exception as e:
         logging.error(f"Veri çekme hatası: {e}")
         return jsonify({'message': 'Veri çekme sırasında bir hata oluştu.'}), 500
@@ -500,7 +499,6 @@ def premium_profit(current_user_id):
             return jsonify(profit_list), 200
         else:
             return jsonify({'message': 'Premium kar kaydı bulunamadı.'}), 404
-
     except Exception as e:
         logging.error(f"Veritabanı hatası: {e}")
         return jsonify({'message': 'Veri çekme sırasında hata oluştu.'}), 500
@@ -642,6 +640,33 @@ def update_favorited_asin(current_user_id, user_subscription):
     except Exception as e:
         logging.error(f"Favori durumu güncelleme hatası: {e}")
         return jsonify({'message': f'Favori durumu güncelleme sırasında hata oluştu: {e}'}), 500
+    
+
+@app.route('/update_favorited_asin_wls', methods=['POST'])
+@token_required
+def update_favorited_asin_wls(current_user_id, user_subscription):
+    try:
+        data = request.get_json()
+        asin = data.get('asin')
+        is_favorited = data.get('is_favorited', 0)
+
+        if not asin:
+            return jsonify({'message': 'ASIN eksik'}), 400
+
+        cursor = conn.cursor()
+        cursor.execute(""" 
+            UPDATE wls_User_Temporary_Data 
+            SET is_favorited = ? 
+            WHERE user_id = ? AND asin = ?
+        """, (is_favorited, current_user_id, asin))
+        conn.commit()
+
+        return jsonify({'message': 'Favori durumu güncellendi.'}), 200
+
+    except Exception as e:
+        logging.error(f"Favori durumu güncelleme hatası: {e}")
+        return jsonify({'message': f'Favori durumu güncelleme sırasında hata oluştu: {e}'}), 500
+
 
 @app.route('/get_favorite_asins', methods=['GET'])
 @token_required
