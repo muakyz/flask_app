@@ -98,6 +98,61 @@ def get_wls_results(current_user_id, user_subscription):
         return jsonify({'message': f'Sonuçları getirirken hata oluştu: {e}'}), 500
 
 
+@app.route('/get_favorite_asins_wls', methods=['GET'])
+@token_required
+def get_favorite_asins_wls(current_user_id, user_subscription):
+    try:
+        conn = get_connection()
+        cursor = conn.cursor()
+        cursor.execute("""
+            SELECT asin, profit, buy_box_current_source, 
+                   buy_box_current_source_converted, 
+                   buy_box_current_target, 
+                   bought_in_past_month_target, 
+                   buy_box_amazon_30_days_target, 
+                   buy_box_eligible_offer_count, 
+                   amazon_availability_offer_target, 
+                   roi, 
+                   is_favorited,
+                   Image,
+                   matched_column,
+                   matched_value,
+                   currency_info
+            FROM wls_User_Temporary_Data 
+            WHERE user_id = ? and is_favorited =
+        """, (current_user_id,))  
+
+        rows = cursor.fetchall()
+        data = [
+            {
+                'asin': row[0],
+                'profit': row[1],
+                'bb_source': row[2],
+                'bb_source_converted': row[3],
+                'bb_target': row[4],
+                'bought_in_past_month': row[5],
+                'buy_box_amazon_percentage': row[6],
+                'buy_box_eligible_offer_count': row[7],
+                'is_amazon_selling': row[8],
+                'roi': row[9],
+                'is_favorited': row[10],
+                'image': row[11],
+                'matched_column': row[12],
+                'matched_value': row[13],
+                'currency_info': row[14]
+            } for row in rows
+        ]
+
+        cursor.close()
+        conn.close()
+
+        return jsonify({
+            'data': data
+        }), 200
+    except Exception as e:
+        logging.error(f"Sonuçları getirirken hata oluştu: {e}")
+        return jsonify({'message': f'Sonuçları getirirken hata oluştu: {e}'}), 500
+
 
 @app.route('/delete_non_favorited_asin_wls', methods=['POST'])
 @token_required
