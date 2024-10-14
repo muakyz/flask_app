@@ -83,31 +83,20 @@ def get_wls_results(current_user_id, user_subscription):
                 'image': row[11],
                 'matched_column': row[12],
                 'matched_value': row[13],
+                'currency_info': row[14]
             } for row in rows
         ]
-
-        if rows and len(rows[0]) >= 15:
-            currency_info = rows[0][14]
-            if '/' in currency_info:
-                source_currency, target_currency = currency_info.split('/', 1)
-            else:
-                source_currency = currency_info
-                target_currency = ''
-        else:
-            source_currency = ''
-            target_currency = ''
 
         cursor.close()
         conn.close()
 
         return jsonify({
-            'data': data,
-            'source_currency': source_currency,
-            'target_currency': target_currency
+            'data': data
         }), 200
     except Exception as e:
         logging.error(f"Sonuçları getirirken hata oluştu: {e}")
         return jsonify({'message': f'Sonuçları getirirken hata oluştu: {e}'}), 500
+
 
 
 @app.route('/delete_non_favorited_asin_wls', methods=['POST'])
