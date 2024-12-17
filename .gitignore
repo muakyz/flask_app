@@ -1,3 +1,7 @@
 .env
 __pycache__/
 uploads/
+database.py
+mail_utils.py
+script_csv.py
+script_wls.py
